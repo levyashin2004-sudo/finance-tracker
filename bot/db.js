@@ -95,66 +95,62 @@ const db = {
 
 // INITIALIZATION LOGIC (Runs on worker start)
 db.serialize(() => {
-    db.run(`CREATE TABLE IF NOT EXISTS users (telegram_id BIGINT PRIMARY KEY, first_name TEXT, username TEXT)`);
-    db.run(`CREATE TABLE IF NOT EXISTS categories (id SERIAL PRIMARY KEY, name TEXT UNIQUE, type TEXT, icon TEXT, is_mandatory BOOLEAN DEFAULT false, planned_amount NUMERIC DEFAULT 0)`);
-    db.run(`CREATE TABLE IF NOT EXISTS transactions (id SERIAL PRIMARY KEY, amount NUMERIC, category_id INTEGER, user_id BIGINT, date TIMESTAMP DEFAULT CURRENT_TIMESTAMP, description TEXT, FOREIGN KEY (category_id) REFERENCES categories (id), FOREIGN KEY (user_id) REFERENCES users (telegram_id))`);
-    db.run(`CREATE TABLE IF NOT EXISTS wallets (id SERIAL PRIMARY KEY, name TEXT, icon TEXT, amount NUMERIC DEFAULT 0)`);
-    db.run(`CREATE TABLE IF NOT EXISTS savings (id SERIAL PRIMARY KEY, user_id BIGINT, name TEXT, currency TEXT, amount NUMERIC, FOREIGN KEY (user_id) REFERENCES users (telegram_id))`);
-    db.run(`CREATE TABLE IF NOT EXISTS investments (id SERIAL PRIMARY KEY, name TEXT, icon TEXT, amount NUMERIC)`);
-    db.run(`CREATE TABLE IF NOT EXISTS debts (id SERIAL PRIMARY KEY, name TEXT, amount NUMERIC)`);
-    db.run(`CREATE TABLE IF NOT EXISTS recurring_payments (id SERIAL PRIMARY KEY, name TEXT, amount NUMERIC, category_id INTEGER, user_id BIGINT, day_of_month INTEGER, type TEXT, FOREIGN KEY (category_id) REFERENCES categories (id))`);
-    db.run(`CREATE TABLE IF NOT EXISTS budgets (id SERIAL PRIMARY KEY, name TEXT, icon TEXT, type TEXT, planned_amount NUMERIC DEFAULT 0)`);
-    
-    // NEW TABLES
-    db.run(`CREATE TABLE IF NOT EXISTS goals (
-        id SERIAL PRIMARY KEY,
-        name TEXT,
-        icon TEXT,
-        type TEXT, 
-        amount_saved NUMERIC DEFAULT 0,
-        target_amount NUMERIC DEFAULT 0
-    )`);
+    // 1. Initial creations (kept for clean startups)
+    db.run(`CREATE TABLE IF NOT EXISTS users (telegram_id BIGINT PRIMARY KEY, first_name TEXT, username TEXT, family_id BIGINT)`);
+    db.run(`CREATE TABLE IF NOT EXISTS categories (id SERIAL PRIMARY KEY, name TEXT, type TEXT, icon TEXT, is_mandatory BOOLEAN DEFAULT false, planned_amount NUMERIC DEFAULT 0, family_id BIGINT)`);
+    db.run(`CREATE TABLE IF NOT EXISTS transactions (id SERIAL PRIMARY KEY, amount NUMERIC, category_id INTEGER, user_id BIGINT, date TIMESTAMP DEFAULT CURRENT_TIMESTAMP, description TEXT, family_id BIGINT)`);
+    db.run(`CREATE TABLE IF NOT EXISTS wallets (id SERIAL PRIMARY KEY, name TEXT, icon TEXT, amount NUMERIC DEFAULT 0, family_id BIGINT)`);
+    db.run(`CREATE TABLE IF NOT EXISTS savings (id SERIAL PRIMARY KEY, user_id BIGINT, name TEXT, currency TEXT, amount NUMERIC, family_id BIGINT)`);
+    db.run(`CREATE TABLE IF NOT EXISTS investments (id SERIAL PRIMARY KEY, name TEXT, icon TEXT, amount NUMERIC, family_id BIGINT)`);
+    db.run(`CREATE TABLE IF NOT EXISTS debts (id SERIAL PRIMARY KEY, name TEXT, amount NUMERIC, family_id BIGINT)`);
+    db.run(`CREATE TABLE IF NOT EXISTS recurring_payments (id SERIAL PRIMARY KEY, name TEXT, amount NUMERIC, category_id INTEGER, user_id BIGINT, day_of_month INTEGER, type TEXT, family_id BIGINT)`);
+    db.run(`CREATE TABLE IF NOT EXISTS budgets (id SERIAL PRIMARY KEY, name TEXT, icon TEXT, type TEXT, planned_amount NUMERIC DEFAULT 0, family_id BIGINT)`);
+    db.run(`CREATE TABLE IF NOT EXISTS goals (id SERIAL PRIMARY KEY, name TEXT, icon TEXT, type TEXT, amount_saved NUMERIC DEFAULT 0, target_amount NUMERIC DEFAULT 0, family_id BIGINT)`);
+    db.run(`CREATE TABLE IF NOT EXISTS allocation_rules (id SERIAL PRIMARY KEY, target_goal_id INTEGER, percentage NUMERIC DEFAULT 0)`);
 
-    db.run(`CREATE TABLE IF NOT EXISTS allocation_rules (
-        id SERIAL PRIMARY KEY,
-        target_goal_id INTEGER,
-        percentage NUMERIC DEFAULT 0,
-        FOREIGN KEY (target_goal_id) REFERENCES goals (id)
-    )`);
-
-    // SEEDS
-    db.get('SELECT COUNT(*) as count FROM wallets', (err, row) => {
-        if (row && parseInt(row.count) === 0) {
-            db.run('INSERT INTO wallets (name, icon, amount) VALUES ($1, $2, $3)', ['Банковская карта', '💳', 0]);
-            db.run('INSERT INTO wallets (name, icon, amount) VALUES ($1, $2, $3)', ['Наличка', '💵', 0]);
-        }
+    // 2. Perform Migrations for existing tables
+    const tablesToMigrate = ['users', 'categories', 'transactions', 'wallets', 'savings', 'investments', 'debts', 'recurring_payments', 'budgets', 'goals'];
+    tablesToMigrate.forEach(table => {
+        db.run(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS family_id BIGINT`);
     });
 
-    db.get('SELECT COUNT(*) as count FROM budgets', (err, row) => {
-        if (row && parseInt(row.count) === 0) {
-            db.run('INSERT INTO budgets (name, icon, type, planned_amount) VALUES ($1, $2, $3, $4)', ['Основной доход', '💰', 'income', 50000]);
-        }
-    });
+    // 3. Drop existing unique constraints that conflict with multi-tenancy
+    // PostgreSQL wrapper for safely dropping and recreating unique constraint spanning family_id
+    pool.query(`
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'categories_name_key') THEN
+                ALTER TABLE categories DROP CONSTRAINT categories_name_key;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'categories_name_family_unique') THEN
+                ALTER TABLE categories ADD CONSTRAINT categories_name_family_unique UNIQUE (name, family_id);
+            END IF;
+        END $$;
+    `).catch(err => console.error("Migration error:", err));
 
-    db.get('SELECT COUNT(*) as count FROM categories', (err, row) => {
-        if (row && parseInt(row.count) === 0) {
-            const defaults = [
-                ['Проживание (Аренда)', 'expense', '🏠', true], ['Коммуналка', 'expense', '💡', true],
-                ['Еда (Продукты)', 'expense', '🛒', true], ['Транспорт', 'expense', '🚌', true],
-                ['Одежда', 'expense', '👕', false], ['Зарплата', 'income', '💰', false]
-            ];
-            const stmt = db.prepare('INSERT INTO categories (name, type, icon, is_mandatory) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING');
-            defaults.forEach(c => stmt.run(...c));
-            stmt.finalize();
-        }
-    });
-
-    db.get('SELECT COUNT(*) as count FROM goals', (err, row) => {
-        if (row && parseInt(row.count) === 0) {
-            db.run('INSERT INTO goals (name, icon, type, amount_saved, target_amount) VALUES ($1, $2, $3, $4, $5)', ['Стоматолог', '🦷', 'savings_goal', 0, 100000]);
-            db.run('INSERT INTO goals (name, icon, type, amount_saved, target_amount) VALUES ($1, $2, $3, $4, $5)', ['Новая вещь', '👕', 'wishlist', 0, 5000]);
-        }
-    });
+    // Seeds are now handled during user registration in index.js to support per-family seeding
 });
+
+// Export a helper function to seed a fresh family
+db.seedFamily = function(familyId, cb) {
+    db.run('INSERT INTO wallets (name, icon, amount, family_id) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING', ['Банковская карта', '💳', 0, familyId]);
+    db.run('INSERT INTO wallets (name, icon, amount, family_id) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING', ['Наличка', '💵', 0, familyId]);
+    
+    db.run('INSERT INTO budgets (name, icon, type, planned_amount, family_id) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING', ['Основной доход', '💰', 'income', 50000, familyId]);
+    
+    const defaults = [
+        ['Проживание (Аренда)', 'expense', '🏠', true], ['Коммуналка', 'expense', '💡', true],
+        ['Еда (Продукты)', 'expense', '🛒', true], ['Транспорт', 'expense', '🚌', true],
+        ['Одежда', 'expense', '👕', false], ['Зарплата', 'income', '💰', false]
+    ];
+    defaults.forEach(c => {
+        db.run('INSERT INTO categories (name, type, icon, is_mandatory, family_id) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING', [...c, familyId]);
+    });
+    
+    db.run('INSERT INTO goals (name, icon, type, amount_saved, target_amount, family_id) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING', ['Стоматолог', '🦷', 'savings_goal', 0, 100000, familyId]);
+    db.run('INSERT INTO goals (name, icon, type, amount_saved, target_amount, family_id) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING', ['Новая вещь', '👕', 'wishlist', 0, 5000, familyId]);
+    
+    if (cb) cb();
+};
 
 module.exports = db;

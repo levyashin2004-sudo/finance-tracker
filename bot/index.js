@@ -23,15 +23,23 @@ const expenseWizard = new Scenes.WizardScene(
         ctx.wizard.state.amount = amount;
         
         // Fetch categories dynamically
-        db.all('SELECT * FROM categories WHERE type = "expense"', [], (err, rows) => {
-            if (err) return console.error(err);
-            const buttons = rows.map(r => Markup.button.callback(`${r.icon} ${r.name}`, `cat_${r.id}`));
-            // Keyboard layout (rows of 2 buttons)
-            const keyboard = [];
-            for(let i=0; i<buttons.length; i+=2) {
-                keyboard.push(buttons.slice(i, i+2));
-            }
-            ctx.reply(`Сумма: ${amount} ₽\nВыберите категорию:`, Markup.inlineKeyboard(keyboard));
+        db.get('SELECT family_id FROM users WHERE telegram_id = ?', [ctx.from.id], (err, row) => {
+            const familyId = row ? row.family_id : ctx.from.id;
+            ctx.wizard.state.familyId = familyId;
+            
+            db.all('SELECT * FROM categories WHERE type = "expense" AND family_id = ?', [familyId], (err, rows) => {
+                if (err || !rows) return console.error(err);
+                if (rows.length === 0) {
+                    ctx.reply('У вас пока нет категорий расходов. Добавьте их через Дашборд!');
+                    return ctx.scene.leave();
+                }
+                const buttons = rows.map(r => Markup.button.callback(`${r.icon} ${r.name}`, `cat_${r.id}`));
+                const keyboard = [];
+                for(let i=0; i<buttons.length; i+=2) {
+                    keyboard.push(buttons.slice(i, i+2));
+                }
+                ctx.reply(`Сумма: ${amount} ₽\nВыберите категорию:`, Markup.inlineKeyboard(keyboard));
+            });
         });
         return ctx.wizard.next();
     },
@@ -42,8 +50,9 @@ const expenseWizard = new Scenes.WizardScene(
                 const catId = action.split('_')[1];
                 const amount = ctx.wizard.state.amount;
                 const userId = ctx.from.id;
+                const familyId = ctx.wizard.state.familyId;
                 
-                db.run('INSERT INTO transactions (amount, category_id, user_id) VALUES (?, ?, ?)', [amount, catId, userId], function(err) {
+                db.run('INSERT INTO transactions (amount, category_id, user_id, family_id) VALUES (?, ?, ?, ?)', [amount, catId, userId, familyId], function(err) {
                     if (err) return console.error(err);
                     ctx.reply('✅ Трата успешно сохранена!');
                     ctx.answerCbQuery();
@@ -58,16 +67,49 @@ const stage = new Scenes.Stage([expenseWizard]);
 bot.use(stage.middleware());
 
 bot.start((ctx) => {
-    // Сохраняем пользователя в базу для семейного доступа
-    db.run(
-        'INSERT OR IGNORE INTO users (telegram_id, first_name, username) VALUES (?, ?, ?)', 
-        [ctx.from.id, ctx.from.first_name, ctx.from.username]
-    );
+    const payload = ctx.message.text.split(' ')[1]; // "/start join_123"
+    let familyId = ctx.from.id; // Default to isolated personal budget
+    
+    if (payload && payload.startsWith('join_')) {
+        const parsed = parseInt(payload.split('_')[1]);
+        if (!isNaN(parsed)) familyId = parsed;
+    }
 
-    ctx.reply('Привет! Я ваш финансовый трекер. Что вам нужно?', Markup.keyboard([
+    // Register user and handle family scoping
+    db.get('SELECT * FROM users WHERE telegram_id = ?', [ctx.from.id], (err, row) => {
+        if (!row) {
+            db.run(
+                'INSERT INTO users (telegram_id, first_name, username, family_id) VALUES (?, ?, ?, ?)', 
+                [ctx.from.id, ctx.from.first_name, ctx.from.username, familyId],
+                () => {
+                    if (familyId === ctx.from.id) {
+                        // Seed defaults ONLY for a brand new isolated family
+                        db.seedFamily(familyId);
+                    } else {
+                        ctx.reply('👨‍👩‍👧 Вы успешно присоединились к семейному бюджету!');
+                    }
+                }
+            );
+        } else if (payload && payload.startsWith('join_')) {
+             // Move existing user to new family
+             db.run('UPDATE users SET family_id = ? WHERE telegram_id = ?', [familyId, ctx.from.id], () => {
+                 ctx.reply('👨‍👩‍👧 Вы переключились на новый семейный бюджет!');
+             });
+        }
+    });
+
+    ctx.reply('Привет! Я ваш изолированный финансовый трекер. Что вам нужно?', Markup.keyboard([
         ['📉 Добавить расход', '📈 Добавить доход'],
-        ['📊 Дашборд']
+        ['📊 Дашборд', '🔗 Пригласить в семью']
     ]).resize());
+});
+
+bot.hears('🔗 Пригласить в семью', (ctx) => {
+    db.get('SELECT family_id FROM users WHERE telegram_id = ?', [ctx.from.id], (err, row) => {
+        const fId = row ? row.family_id : ctx.from.id;
+        const link = `https://t.me/${ctx.botInfo.username}?start=join_${fId}`;
+        ctx.reply(`Отправьте эту ссылку членам семьи, чтобы у вас был **ОБЩИЙ** бюджет:\n\n${link}\n\n*Друзья, зашедшие просто по названию бота (без ссылки), получат отдельный пустой бюджет.*`, {parse_mode: 'Markdown'});
+    });
 });
 
 bot.hears('📉 Добавить расход', (ctx) => {
