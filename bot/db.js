@@ -1,6 +1,9 @@
 const { Pool } = require('pg');
-require('dotenv').config();
+const dns = require('dns');
+// Force Node.js to prefer IPv4. Supabase domains have AAAA records, but Render blocks outbound IPv6, causing ENETUNREACH.
+dns.setDefaultResultOrder('ipv4first');
 
+require('dotenv').config();
 // Create PostgreSQL connection pool
 // This gracefully handles both local execution and Render execution
 const pool = new Pool({

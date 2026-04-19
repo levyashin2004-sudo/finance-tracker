@@ -2,7 +2,9 @@ require('dotenv').config();
 const { Telegraf, Markup, session, Scenes } = require('telegraf');
 const db = require('./db.js');
 
-const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN || process.env.BOT_TOKEN);
+let token = process.env.TELEGRAM_BOT_TOKEN || process.env.BOT_TOKEN || '';
+token = token.replace(/[\'\"\s]/g, ''); // Strip accidental quotes and spaces from Render ENV!
+const bot = new Telegraf(token);
 
 // Enable session tracking for multi-step scenarios
 bot.use(session());
