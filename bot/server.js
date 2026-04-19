@@ -163,7 +163,7 @@ app.put('/api/recurring/:id', (req, res) => {
 app.delete('/api/recurring/:id', (req, res) => {
     db.run('DELETE FROM recurring_payments WHERE id = ?', [req.params.id], () => res.json({ success: true }));
 });
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`API Server with Smart Goals running on ${PORT}`);
     // Start Telegram Bot alongside the API Server
