@@ -162,8 +162,17 @@ app.put('/api/budgets/:id', (req, res) => db.run('UPDATE budgets SET planned_amo
 app.delete('/api/budgets/:id', (req, res) => db.run('DELETE FROM budgets WHERE id = ? AND family_id = ?', [req.params.id, req.familyId], () => res.json({ success: true })));
 
 app.get('/api/savings', (req, res) => db.all('SELECT * FROM savings WHERE family_id = ?', [req.familyId], (err, rows) => res.json(rows||[])));
+app.post('/api/savings', (req, res) => db.run('INSERT INTO savings (name, currency, amount, family_id) VALUES (?, ?, ?, ?)', [req.body.name, req.body.currency, req.body.amount, req.familyId], function() { res.json({ id: this.lastID, success: true }); }));
+app.delete('/api/savings/:id', (req, res) => db.run('DELETE FROM savings WHERE id = ? AND family_id = ?', [req.params.id, req.familyId], () => res.json({ success: true })));
+
 app.get('/api/investments', (req, res) => db.all('SELECT * FROM investments WHERE family_id = ?', [req.familyId], (err, rows) => res.json(rows||[])));
+app.post('/api/investments', (req, res) => db.run('INSERT INTO investments (name, icon, amount, family_id) VALUES (?, ?, ?, ?)', [req.body.name, req.body.icon, req.body.amount, req.familyId], function() { res.json({ id: this.lastID, success: true }); }));
+app.delete('/api/investments/:id', (req, res) => db.run('DELETE FROM investments WHERE id = ? AND family_id = ?', [req.params.id, req.familyId], () => res.json({ success: true })));
+
 app.get('/api/debts', (req, res) => db.all('SELECT * FROM debts WHERE family_id = ?', [req.familyId], (err, rows) => res.json(rows||[])));
+app.post('/api/debts', (req, res) => db.run('INSERT INTO debts (name, amount, family_id) VALUES (?, ?, ?)', [req.body.name, req.body.amount, req.familyId], function() { res.json({ id: this.lastID, success: true }); }));
+app.delete('/api/debts/:id', (req, res) => db.run('DELETE FROM debts WHERE id = ? AND family_id = ?', [req.params.id, req.familyId], () => res.json({ success: true })));
+
 
 app.get('/api/recurring', (req, res) => db.all('SELECT * FROM recurring_payments WHERE family_id = ?', [req.familyId], (err, rows) => res.json(rows||[])));
 app.post('/api/recurring', (req, res) => {
