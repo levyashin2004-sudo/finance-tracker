@@ -173,6 +173,17 @@ app.get('/api/debts', (req, res) => db.all('SELECT * FROM debts WHERE family_id 
 app.post('/api/debts', (req, res) => db.run('INSERT INTO debts (name, amount, family_id) VALUES (?, ?, ?)', [req.body.name, req.body.amount, req.familyId], function() { res.json({ id: this.lastID, success: true }); }));
 app.delete('/api/debts/:id', (req, res) => db.run('DELETE FROM debts WHERE id = ? AND family_id = ?', [req.params.id, req.familyId], () => res.json({ success: true })));
 
+// Global Currency endpoint
+app.get('/api/currency', async (req, res) => {
+    try {
+        const response = await fetch('https://www.cbr-xml-daily.ru/daily_json.js');
+        const data = await response.json();
+        res.json({ usdRate: data.Valute.USD.Value });
+    } catch (e) {
+        res.json({ usdRate: 76.05 }); // Fallback actual rate
+    }
+});
+
 
 app.get('/api/recurring', (req, res) => db.all('SELECT * FROM recurring_payments WHERE family_id = ?', [req.familyId], (err, rows) => res.json(rows||[])));
 app.post('/api/recurring', (req, res) => {

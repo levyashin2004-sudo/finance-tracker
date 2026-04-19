@@ -12,12 +12,12 @@ export default function CapitalTab() {
     fetch('/api/investments').then(r=>r.json()).then(setInvestments);
     fetch('/api/debts').then(r=>r.json()).then(setDebts);
 
-    // Подтягиваем актуальный курс ЦБ РФ
-    fetch('https://www.cbr-xml-daily.ru/daily_json.js')
+    // Подтягиваем актуальный курс ЦБ РФ через наш сервер (обход блокировок)
+    fetch('/api/currency')
       .then(r => r.json())
       .then(data => {
-        if(data && data.Valute && data.Valute.USD) {
-          setUsdRate(data.Valute.USD.Value);
+        if(data && data.usdRate) {
+          setUsdRate(data.usdRate);
         }
       })
       .catch(console.error);
