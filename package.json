@@ -1,0 +1,9 @@
+{
+  "name": "finance-tracker-cloud",
+  "version": "1.0.0",
+  "description": "Finance Tracker Backend & Frontend",
+  "scripts": {
+    "postinstall": "cd bot && npm install && cd ../webapp && npm install --legacy-peer-deps && npm run build",
+    "start": "cd bot && node server.js"
+  }
+}
