@@ -67,7 +67,8 @@ const stage = new Scenes.Stage([expenseWizard]);
 bot.use(stage.middleware());
 
 bot.start((ctx) => {
-    const payload = ctx.message.text.split(' ')[1]; // "/start join_123"
+    const text = (ctx.message && ctx.message.text) || '';
+    const payload = text.split(' ')[1]; // "/start join_123"
     let familyId = ctx.from.id; // Default to isolated personal budget
     
     if (payload && payload.startsWith('join_')) {

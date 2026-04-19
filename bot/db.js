@@ -46,9 +46,11 @@ const db = {
             cb = params;
             params = [];
         }
+        const cleanParams = params.map(p => p === undefined ? null : p);
         
         let pgSql = convertQuery(sql);
-        pool.query(pgSql, params, (err, result) => {
+        pool.query(pgSql, cleanParams, (err, result) => {
+            if (err) console.error("DB RUN ERROR:", err.message, pgSql);
             if (cb) {
                 // Return context equivalent to SQLite
                 const context = { 
@@ -64,7 +66,10 @@ const db = {
             cb = params;
             params = [];
         }
-        pool.query(convertQuery(sql), params, (err, result) => {
+        const cleanParams = params.map(p => p === undefined ? null : p);
+        const pgSql = convertQuery(sql);
+        pool.query(pgSql, cleanParams, (err, result) => {
+            if (err) console.error("DB GET ERROR:", err.message, pgSql);
             if (cb) cb(err, (result && result.rows) ? result.rows[0] : null);
         });
     },
@@ -73,7 +78,10 @@ const db = {
             cb = params;
             params = [];
         }
-        pool.query(convertQuery(sql), params, (err, result) => {
+        const cleanParams = params.map(p => p === undefined ? null : p);
+        const pgSql = convertQuery(sql);
+        pool.query(pgSql, cleanParams, (err, result) => {
+            if (err) console.error("DB ALL ERROR:", err.message, pgSql);
             if (cb) cb(err, (result && result.rows) ? result.rows : []);
         });
     },
