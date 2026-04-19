@@ -77,19 +77,26 @@ bot.hears('📉 Добавить расход', (ctx) => {
 const localtunnel = require('localtunnel');
 let dynamicWebAppUrl = process.env.WEBAPP_URL || 'https://google.com';
 
-(async () => {
-    try {
-        const tunnel = await localtunnel({ port: 5173 });
-        dynamicWebAppUrl = tunnel.url;
-        console.log(`[INFO] Telegram Web App HTTPS URL secured: ${dynamicWebAppUrl}`);
-        
-        tunnel.on('close', () => {
-            console.log('[INFO] Tunnel closed');
-        });
-    } catch (err) {
-        console.error('[ERROR] Localtunnel failed:', err);
-    }
-})();
+if (process.env.RENDER_EXTERNAL_URL) {
+    // ☁️ We are running in the cloud (Render.com)
+    dynamicWebAppUrl = process.env.RENDER_EXTERNAL_URL;
+    console.log(`[INFO] Operating in Cloud Mode! Web App URL: ${dynamicWebAppUrl}`);
+} else {
+    // 💻 We are running locally on the PC
+    (async () => {
+        try {
+            const tunnel = await localtunnel({ port: 5173 });
+            dynamicWebAppUrl = tunnel.url;
+            console.log(`[INFO] Telegram Web App HTTPS URL secured: ${dynamicWebAppUrl}`);
+            
+            tunnel.on('close', () => {
+                console.log('[INFO] Tunnel closed');
+            });
+        } catch (err) {
+            console.error('[ERROR] Localtunnel failed:', err);
+        }
+    })();
+}
 
 // We need a webapp url for our Mini App dashboard
 bot.hears('📊 Дашборд', (ctx) => {
