@@ -27,26 +27,33 @@ const createTransactionWizard = (sceneId, typeName) => {
     return new Scenes.WizardScene(
         sceneId,
         async (ctx) => {
-            // Fetch categories dynamically
             db.get('SELECT family_id FROM users WHERE telegram_id = ?', [ctx.from.id], (err, row) => {
                 const familyId = row ? row.family_id : ctx.from.id;
                 ctx.wizard.state.familyId = familyId;
                 
-                db.all(`SELECT * FROM categories WHERE type = ? AND family_id = ?`, [typeName, familyId], (err, rows) => {
-                    if (err || !rows) return console.error(err);
+                db.all(`SELECT * FROM categories WHERE type = ? AND family_id = ?`, [typeName, familyId], async (err, rows) => {
+                    if (err || !rows) {
+                        ctx.reply('Произошла ошибка при загрузке категорий.');
+                        return ctx.scene.leave();
+                    }
                     if (rows.length === 0) {
                         ctx.reply(`У вас пока нет категорий типа "${typeName}". Добавьте их через Дашборд!`);
                         return ctx.scene.leave();
                     }
-                    const buttons = rows.map(r => Markup.button.callback(`${r.icon} ${r.name}`, `cat_${r.id}`));
-                    const keyboard = [];
-                    for(let i=0; i<buttons.length; i+=2) {
-                        keyboard.push(buttons.slice(i, i+2));
+                    try {
+                        const buttons = rows.map(r => Markup.button.callback(`${r.icon||'📁'} ${r.name}`, `cat_${r.id}`));
+                        const keyboard = [];
+                        for(let i=0; i<buttons.length; i+=2) keyboard.push(buttons.slice(i, i+2));
+                        
+                        await ctx.reply(`Выберите категорию:`, Markup.inlineKeyboard(keyboard));
+                        ctx.wizard.next(); 
+                    } catch(e) {
+                        console.error('Wizard render error:', e);
+                        ctx.reply('Не удалось отобразить категории. Пожалуйста, проверьте настройки категорий в Дашборде.');
+                        ctx.scene.leave();
                     }
-                    ctx.reply(`Выберите категорию:`, Markup.inlineKeyboard(keyboard));
                 });
             });
-            return ctx.wizard.next();
         },
         async (ctx) => {
             if (ctx.callbackQuery) {
@@ -55,18 +62,23 @@ const createTransactionWizard = (sceneId, typeName) => {
                 if (action.startsWith('cat_')) {
                     ctx.wizard.state.catId = action.split('_')[1];
                     
-                    // Fetch wallets to ask which one
-                    db.all(`SELECT * FROM wallets WHERE family_id = ?`, [ctx.wizard.state.familyId], (err, wallets) => {
+                    db.all(`SELECT * FROM wallets WHERE family_id = ?`, [ctx.wizard.state.familyId], async (err, wallets) => {
                         if (err || !wallets || wallets.length === 0) {
                             ctx.reply('У вас нет кошельков. Сначала создайте их через Дашборд!');
                             return ctx.scene.leave();
                         }
-                        const buttons = wallets.map(w => Markup.button.callback(`${w.icon} ${w.name}`, `wal_${w.id}`));
-                        const keyboard = [];
-                        for(let i=0; i<buttons.length; i+=2) keyboard.push(buttons.slice(i, i+2));
-                        ctx.reply(`Откуда ${typeName === 'expense' ? 'списано' : 'зачислено'}? Выберите кошелек:`, Markup.inlineKeyboard(keyboard));
+                        try {
+                            const buttons = wallets.map(w => Markup.button.callback(`${w.icon||'💳'} ${w.name}`, `wal_${w.id}`));
+                            const keyboard = [];
+                            for(let i=0; i<buttons.length; i+=2) keyboard.push(buttons.slice(i, i+2));
+                            await ctx.reply(`Откуда ${typeName === 'expense' ? 'списано' : 'зачислено'}? Выберите кошелек:`, Markup.inlineKeyboard(keyboard));
+                            ctx.wizard.next();
+                        } catch(e) {
+                            console.error('Wizard wallet render err:', e);
+                            ctx.reply('Ошибка загрузки кошельков.');
+                            ctx.scene.leave();
+                        }
                     });
-                    return ctx.wizard.next();
                 }
             } else {
                 ctx.reply('Пожалуйста, выберите категорию из кнопок выше.');
