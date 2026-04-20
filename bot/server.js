@@ -1,7 +1,6 @@
 const express = require('express');
 const cors = require('cors');
 const db = require('./db.js');
-const cron = require('node-cron');
 
 const app = express();
 app.use(cors());
@@ -44,19 +43,8 @@ app.get('/', (req, res) => {
 });
 
 // =======================
-// CRON JOBS
+// CRON JOBS — handled in index.js (processRecurringPayments)
 // =======================
-cron.schedule('0 9 * * *', () => {
-    const todayNum = new Date().getDate();
-    db.all('SELECT * FROM recurring_payments WHERE day_of_month = ?', [todayNum], (err, rows) => {
-        if (err || !rows) return;
-        rows.forEach(payment => {
-            const stmt = db.prepare('INSERT INTO transactions (amount, category_id, user_id, description, date, family_id) VALUES (?, ?, ?, ?, ?, ?)');
-            stmt.run(payment.amount, payment.category_id, payment.user_id, `Авто: ${payment.name}`, new Date().toISOString(), payment.family_id);
-            stmt.finalize();
-        });
-    });
-});
 
 // =======================
 // TRANSACTIONS & SMART ALLOCATION
@@ -256,8 +244,12 @@ app.get('/api/currency', async (req, res) => {
 
 app.get('/api/recurring', (req, res) => db.all('SELECT * FROM recurring_payments WHERE family_id = ?', [req.familyId], (err, rows) => res.json(rows||[])));
 app.post('/api/recurring', (req, res) => {
-    const { name, amount, day_of_month, type } = req.body;
-    db.run('INSERT INTO recurring_payments (name, amount, day_of_month, type, family_id) VALUES (?, ?, ?, ?, ?)', [name, amount, day_of_month, type, req.familyId], function() { res.json({ id: this.lastID, success: true }); });
+    const { name, amount, day_of_month, type, category_id, wallet_id, user_id } = req.body;
+    const tgId = req.headers['x-telegram-id'];
+    const finalUserId = user_id || parseInt(tgId) || null;
+    db.run('INSERT INTO recurring_payments (name, amount, day_of_month, type, category_id, wallet_id, user_id, family_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', 
+        [name, amount, day_of_month, type, category_id || null, wallet_id || null, finalUserId, req.familyId], 
+        function() { res.json({ id: this.lastID, success: true }); });
 });
 app.put('/api/recurring/:id', (req, res) => {
     const { name, amount, day_of_month } = req.body;
