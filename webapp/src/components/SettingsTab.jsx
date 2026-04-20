@@ -111,10 +111,29 @@ export default function SettingsTab() {
 
         {/* УЧАСТНИКИ СЕМЬИ */}
         <div className="glass-card" style={{marginBottom: '20px', borderColor: 'rgba(16, 185, 129, 0.3)'}}>
-            <h3 className="section-title" style={{margin:0, marginBottom:'15px', color:'#10b981'}}>👨‍👩‍👧 Участники Семьи (Бюджета)</h3>
+            <div style={{display:'flex', justifyContent:'space-between', alignItems: 'center', marginBottom:'15px'}}>
+                <h3 className="section-title" style={{margin:0, color:'#10b981'}}>👨‍👩‍👧 Участники Семьи</h3>
+            </div>
+            
+            <div style={{background: 'rgba(16, 185, 129, 0.1)', padding: '12px', borderRadius: '10px', marginBottom: '15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                <div>
+                    <div style={{fontSize: '0.8rem', color: '#10b981', fontWeight: 'bold'}}>Ваш личный ID:</div>
+                    <div style={{fontSize: '1.2rem', fontFamily: 'monospace', marginTop: '4px'}} id="my-personal-id">
+                        {window.Telegram?.WebApp?.initDataUnsafe?.user?.id || localStorage.getItem('saved_desktop_user') || 'Загрузка...'}
+                    </div>
+                </div>
+                <button className="add-btn-small" style={{fontSize: '0.8rem', padding: '6px 12px'}} onClick={() => {
+                    const id = window.Telegram?.WebApp?.initDataUnsafe?.user?.id || localStorage.getItem('saved_desktop_user');
+                    if (id) {
+                        navigator.clipboard.writeText(id.toString());
+                        alert('ID скопирован: ' + id);
+                    }
+                }}>Скопировать</button>
+            </div>
+
             <div style={{display:'flex', flexDirection:'column', gap:'10px'}}>
                 {familyMembers.length === 0 ? (
-                    <div style={{color:'#94a3b8', fontSize:'0.9rem'}}>Только вы (или загрузка...).</div>
+                    <div style={{color:'#94a3b8', fontSize:'0.9rem'}}>Кроме вас в базе пока никого нет (или данные обновляются).</div>
                 ) : (
                     familyMembers.map((member, idx) => (
                         <div key={idx} style={{display:'flex', alignItems:'center', gap:'10px', background:'rgba(255,255,255,0.05)', padding:'10px', borderRadius:'10px'}}>
