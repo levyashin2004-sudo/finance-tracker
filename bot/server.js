@@ -166,7 +166,6 @@ app.post('/api/family/join', (req, res) => {
     const telegramId = req.headers['x-telegram-id'];
     if (!telegramId) return res.status(401).json({ success: false, error: 'Unauthorized' });
 
-    // Strip @ if present
     inviteCode = inviteCode.trim().replace(/^@/, '');
 
     const applyJoin = (targetFamilyId) => {
@@ -175,16 +174,16 @@ app.post('/api/family/join', (req, res) => {
         });
     };
 
-    // Try as numeric ID first
-    const asNumber = parseInt(inviteCode);
-    if (!isNaN(asNumber) && asNumber > 0 && String(asNumber) === inviteCode) {
-        return applyJoin(asNumber);
+    // Extract digits — if input contains numbers, use them as family_id directly
+    const digits = inviteCode.replace(/\D/g, '');
+    if (digits.length >= 5) {
+        return applyJoin(parseInt(digits));
     }
 
-    // Otherwise treat as username lookup
+    // Otherwise try username lookup in our DB
     db.get('SELECT family_id FROM users WHERE LOWER(username) = LOWER(?)', [inviteCode], (err, row) => {
         if (err || !row) {
-            return res.status(404).json({ success: false, error: 'Пользователь с таким юзернеймом не найден в базе' });
+            return res.status(404).json({ success: false, error: 'Не найден. Убедитесь, что человек хотя бы раз открывал бота.' });
         }
         applyJoin(row.family_id);
     });
