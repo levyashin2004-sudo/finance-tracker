@@ -184,16 +184,19 @@ export default function SettingsTab() {
             </div>
 
             <button className="action-btn" style={{marginTop: '12px', background: 'rgba(16, 185, 129, 0.1)', color: '#10b981'}} onClick={() => {
-                const code = prompt("Введите ID семьи, к которой хотите присоединиться:");
+                const code = prompt("Введите @username или ID члена семьи, к которому хотите присоединиться:\n\nНапример: @levyashin или 8656774934");
                 if (code) {
                     fetch('/api/family/join', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ inviteCode: code })
-                    }).then(() => { alert("Готово! Перезагрузка..."); window.location.reload(); });
+                    }).then(r => {
+                        if (r.ok) { alert('Готово! Вы в семье. Перезагрузка...'); window.location.reload(); }
+                        else r.json().then(d => alert('Ошибка: ' + (d.error || 'Неизвестная ошибка')));
+                    });
                 }
             }}>
-                Присоединиться к семье по ID
+                Присоединиться к семье (@username или ID)
             </button>
         </div>
 

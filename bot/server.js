@@ -160,18 +160,33 @@ app.get('/api/family', (req, res) => {
 });
 
 app.post('/api/family/join', (req, res) => {
-    const { inviteCode } = req.body;
-    const targetFamilyId = parseInt(inviteCode);
-    if (!targetFamilyId || isNaN(targetFamilyId)) {
-        return res.status(400).json({ success: false, error: 'Invalid invite code' });
-    }
+    let { inviteCode } = req.body;
+    if (!inviteCode) return res.status(400).json({ success: false, error: 'No invite code' });
     
-    // We update the requesting user's family_id to match the invite code
     const telegramId = req.headers['x-telegram-id'];
     if (!telegramId) return res.status(401).json({ success: false, error: 'Unauthorized' });
 
-    db.run('UPDATE users SET family_id = ? WHERE telegram_id = ?', [targetFamilyId, telegramId], () => {
-        res.json({ success: true });
+    // Strip @ if present
+    inviteCode = inviteCode.trim().replace(/^@/, '');
+
+    const applyJoin = (targetFamilyId) => {
+        db.run('UPDATE users SET family_id = ? WHERE telegram_id = ?', [targetFamilyId, telegramId], () => {
+            res.json({ success: true, family_id: targetFamilyId });
+        });
+    };
+
+    // Try as numeric ID first
+    const asNumber = parseInt(inviteCode);
+    if (!isNaN(asNumber) && asNumber > 0 && String(asNumber) === inviteCode) {
+        return applyJoin(asNumber);
+    }
+
+    // Otherwise treat as username lookup
+    db.get('SELECT family_id FROM users WHERE LOWER(username) = LOWER(?)', [inviteCode], (err, row) => {
+        if (err || !row) {
+            return res.status(404).json({ success: false, error: 'Пользователь с таким юзернеймом не найден в базе' });
+        }
+        applyJoin(row.family_id);
     });
 });
 
