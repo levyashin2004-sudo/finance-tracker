@@ -152,6 +152,12 @@ app.delete('/api/allocation_rules/:id', (req, res) => {
 // OTHER CRUD ENDPOINTS
 // =======================
 
+app.get('/api/family', (req, res) => {
+    db.all('SELECT first_name, username, telegram_id, family_id FROM users WHERE family_id = ?', [req.familyId], (err, rows) => {
+        res.json(rows || []);
+    });
+});
+
 // Auto-seed helper logic for empty families
 const autoSeedIfEmpty = (familyId, cb) => {
     db.all('SELECT count(*) as count FROM categories WHERE family_id = ?', [familyId], (err, rows) => {

@@ -5,11 +5,13 @@ export default function SettingsTab() {
   const [categories, setCategories] = useState([]);
   const [recurring, setRecurring] = useState([]);
   const [wallets, setWallets] = useState([]);
+  const [familyMembers, setFamilyMembers] = useState([]);
 
   const fetchData = () => {
     fetch('/api/categories').then(r=>r.json()).then(setCategories);
     fetch('/api/recurring').then(r=>r.json()).then(setRecurring);
     fetch('/api/wallets').then(r=>r.json()).then(setWallets);
+    fetch('/api/family').then(r=>r.json()).then(setFamilyMembers);
   };
 
   useEffect(() => { fetchData(); }, []);
@@ -106,6 +108,31 @@ export default function SettingsTab() {
   return (
     <div className="tab-pane">
         <h2 className="section-title">Настройки системы</h2>
+
+        {/* УЧАСТНИКИ СЕМЬИ */}
+        <div className="glass-card" style={{marginBottom: '20px', borderColor: 'rgba(16, 185, 129, 0.3)'}}>
+            <h3 className="section-title" style={{margin:0, marginBottom:'15px', color:'#10b981'}}>👨‍👩‍👧 Участники Семьи (Бюджета)</h3>
+            <div style={{display:'flex', flexDirection:'column', gap:'10px'}}>
+                {familyMembers.length === 0 ? (
+                    <div style={{color:'#94a3b8', fontSize:'0.9rem'}}>Только вы (или загрузка...).</div>
+                ) : (
+                    familyMembers.map((member, idx) => (
+                        <div key={idx} style={{display:'flex', alignItems:'center', gap:'10px', background:'rgba(255,255,255,0.05)', padding:'10px', borderRadius:'10px'}}>
+                            <div style={{width:'30px', height:'30px', borderRadius:'50%', background:'#475569', display:'flex', alignItems:'center', justifyContent:'center'}}>
+                                {member.first_name ? member.first_name[0].toUpperCase() : 'U'}
+                            </div>
+                            <div>
+                                <div style={{fontWeight:'bold'}}>{member.first_name || 'Без Имени'}</div>
+                                <div style={{fontSize:'0.8rem', color:'#94a3b8'}}>{member.username ? `@${member.username}` : `ID: ${member.telegram_id}`}</div>
+                            </div>
+                        </div>
+                    ))
+                )}
+            </div>
+            <div style={{fontSize:'0.85rem', color:'#f43f5e', marginTop:'15px', lineHeight: '1.4'}}>
+                ⚠️ Если вашей жены (или друга) здесь нет, значит они перешли по ссылке, но <b>не нажали кнопку «Запустить» (или Start)</b> в самом низу чата с ботом!
+            </div>
+        </div>
 
         <div className="glass-card">
             <div style={{display:'flex', justifyContent:'space-between', marginBottom:'15px'}}>
