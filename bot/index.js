@@ -143,10 +143,13 @@ const incomeWizard = createTransactionWizard('INCOME_WIZARD', 'income');
 
 const stage = new Scenes.Stage([expenseWizard, incomeWizard]);
 
-// GLOBAL INTERCEPTOR: If a user clicks ANY main keyboard button, immediately abort active scenes and restart flow
-bot.hears(/(Дашборд|Добавить расход|Добавить доход|Пригласить в семью)/i, async (ctx, next) => {
-    if (ctx.scene && ctx.scene.current) {
-        await ctx.scene.leave();
+// GLOBAL INTERCEPTOR: Forcibly destroy active scenes if a user clicks a Global Menu Button or sends /start
+bot.use((ctx, next) => {
+    const text = (ctx.message && ctx.message.text) ? ctx.message.text : '';
+    if (text.match(/^\/start/i) || text.match(/(Дашборд|Добавить расход|Добавить доход|Пригласить в семью)/i)) {
+        if (ctx.session && ctx.session.__scenes) {
+            ctx.session.__scenes = {}; // Forcefully wipe scene state
+        }
     }
     return next();
 });
