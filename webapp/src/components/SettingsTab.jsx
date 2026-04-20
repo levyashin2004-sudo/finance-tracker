@@ -129,8 +129,25 @@ export default function SettingsTab() {
                     ))
                 )}
             </div>
+            
+            <button className="base-btn" style={{marginTop: '15px', background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', width: '100%'}} onClick={() => {
+                const code = prompt("Если вы хотите присоединиться к чужой семье, введите их ID: (Внимание: ваши старые данные будут скрыты)");
+                if (code) {
+                    fetch('/api/family/join', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ inviteCode: code })
+                    }).then(() => {
+                        alert("Успешно! Обновите страницу.");
+                        window.location.reload();
+                    });
+                }
+            }}>
+                Ввести код семьи вручную
+            </button>
+
             <div style={{fontSize:'0.85rem', color:'#f43f5e', marginTop:'15px', lineHeight: '1.4'}}>
-                ⚠️ Если вашей жены (или друга) здесь нет, значит они перешли по ссылке, но <b>не нажали кнопку «Запустить» (или Start)</b> в самом низу чата с ботом!
+                ⚠️ Если вашей жены (или друга) здесь нет, значит они перешли по ссылке, но <b>не нажали кнопку «Запустить» (или Start)</b> в самом низу чата с ботом! Пусть нажмут <b>"Ввести код"</b> выше и укажут ваш ID.
             </div>
         </div>
 

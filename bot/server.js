@@ -158,6 +158,22 @@ app.get('/api/family', (req, res) => {
     });
 });
 
+app.post('/api/family/join', (req, res) => {
+    const { inviteCode } = req.body;
+    const targetFamilyId = parseInt(inviteCode);
+    if (!targetFamilyId || isNaN(targetFamilyId)) {
+        return res.status(400).json({ success: false, error: 'Invalid invite code' });
+    }
+    
+    // We update the requesting user's family_id to match the invite code
+    const telegramId = req.headers['x-telegram-id'];
+    if (!telegramId) return res.status(401).json({ success: false, error: 'Unauthorized' });
+
+    db.run('UPDATE users SET family_id = ? WHERE telegram_id = ?', [targetFamilyId, telegramId], () => {
+        res.json({ success: true });
+    });
+});
+
 // Auto-seed helper logic for empty families
 const autoSeedIfEmpty = (familyId, cb) => {
     db.all('SELECT count(*) as count FROM categories WHERE family_id = ?', [familyId], (err, rows) => {
