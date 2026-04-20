@@ -143,7 +143,23 @@ app.delete('/api/allocation_rules/:id', (req, res) => {
 // =======================
 // OTHER CRUD ENDPOINTS
 // =======================
-app.get('/api/categories', (req, res) => db.all('SELECT * FROM categories WHERE family_id = ?', [req.familyId], (err, rows) => res.json(rows||[])));
+
+// Auto-seed helper logic for empty families
+const autoSeedIfEmpty = (familyId, cb) => {
+    db.all('SELECT count(*) as count FROM categories WHERE family_id = ?', [familyId], (err, rows) => {
+        if (!err && rows && rows[0] && rows[0].count == 0) {
+            db.seedFamily(familyId, cb);
+        } else {
+            cb();
+        }
+    });
+};
+
+app.get('/api/categories', (req, res) => {
+    autoSeedIfEmpty(req.familyId, () => {
+        db.all('SELECT * FROM categories WHERE family_id = ?', [req.familyId], (err, rows) => res.json(rows||[]));
+    });
+});
 app.post('/api/categories', (req, res) => db.run('INSERT INTO categories (name, type, icon, is_mandatory, planned_amount, family_id) VALUES (?, ?, ?, ?, ?, ?)', [req.body.name, req.body.type, req.body.icon, req.body.is_mandatory, req.body.planned_amount || 0, req.familyId], function() { res.json({ id: this.lastID, success: true }); }));
 app.delete('/api/categories/:id', (req, res) => db.run('DELETE FROM categories WHERE id = ? AND family_id = ?', [req.params.id, req.familyId], () => res.json({ success: true })));
 app.put('/api/categories/:id', (req, res) => {
@@ -151,7 +167,11 @@ app.put('/api/categories/:id', (req, res) => {
     db.run('UPDATE categories SET name = ?, planned_amount = ? WHERE id = ? AND family_id = ?', [name, planned_amount, req.params.id, req.familyId], () => res.json({ success: true }));
 });
 
-app.get('/api/wallets', (req, res) => db.all('SELECT * FROM wallets WHERE family_id = ?', [req.familyId], (err, rows) => res.json(rows||[])));
+app.get('/api/wallets', (req, res) => {
+    autoSeedIfEmpty(req.familyId, () => {
+        db.all('SELECT * FROM wallets WHERE family_id = ?', [req.familyId], (err, rows) => res.json(rows||[]));
+    });
+});
 app.post('/api/wallets', (req, res) => db.run('INSERT INTO wallets (name, icon, amount, family_id) VALUES (?, ?, ?, ?)', [req.body.name, req.body.icon, req.body.amount, req.familyId], function() { res.json({ id: this.lastID, success: true })}));
 app.put('/api/wallets/:id', (req, res) => db.run('UPDATE wallets SET amount = ? WHERE id = ? AND family_id = ?', [req.body.amount, req.params.id, req.familyId], () => res.json({ success: true })));
 app.delete('/api/wallets/:id', (req, res) => db.run('DELETE FROM wallets WHERE id = ? AND family_id = ?', [req.params.id, req.familyId], () => res.json({ success: true })));

@@ -1,7 +1,11 @@
-const { Pool } = require('pg');
+const { Pool, types } = require('pg');
 const dns = require('dns');
-// Force Node.js to prefer IPv4. Supabase domains have AAAA records, but Render blocks outbound IPv6, causing ENETUNREACH.
+
+// Force Node.js to prefer IPv4
 dns.setDefaultResultOrder('ipv4first');
+
+// Tell pg driver to parse Postgres NUMERIC (OID 1700) as JS Numbers instead of Strings
+types.setTypeParser(1700, val => parseFloat(val));
 
 require('dotenv').config();
 // Create PostgreSQL connection pool
@@ -136,6 +140,15 @@ db.serialize(() => {
             IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'categories_name_family_unique') THEN
                 ALTER TABLE categories ADD CONSTRAINT categories_name_family_unique UNIQUE (name, family_id);
             END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'wallets_name_family_unique') THEN
+                ALTER TABLE wallets ADD CONSTRAINT wallets_name_family_unique UNIQUE (name, family_id);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'budgets_name_family_unique') THEN
+                ALTER TABLE budgets ADD CONSTRAINT budgets_name_family_unique UNIQUE (name, family_id);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'goals_name_family_unique') THEN
+                ALTER TABLE goals ADD CONSTRAINT goals_name_family_unique UNIQUE (name, family_id);
+            END IF;
         END $$;
     `).catch(err => console.error("Migration error:", err));
 
@@ -144,10 +157,10 @@ db.serialize(() => {
 
 // Export a helper function to seed a fresh family
 db.seedFamily = function(familyId, cb) {
-    db.run('INSERT INTO wallets (name, icon, amount, family_id) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING', ['Банковская карта', '💳', 0, familyId]);
-    db.run('INSERT INTO wallets (name, icon, amount, family_id) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING', ['Наличка', '💵', 0, familyId]);
+    db.run('INSERT INTO wallets (name, icon, amount, family_id) VALUES ($1, $2, $3, $4) ON CONFLICT (name, family_id) DO NOTHING', ['Банковская карта', '💳', 0, familyId]);
+    db.run('INSERT INTO wallets (name, icon, amount, family_id) VALUES ($1, $2, $3, $4) ON CONFLICT (name, family_id) DO NOTHING', ['Наличка', '💵', 0, familyId]);
     
-    db.run('INSERT INTO budgets (name, icon, type, planned_amount, family_id) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING', ['Основной доход', '💰', 'income', 50000, familyId]);
+    db.run('INSERT INTO budgets (name, icon, type, planned_amount, family_id) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (name, family_id) DO NOTHING', ['Основной доход', '💰', 'income', 50000, familyId]);
     
     const defaults = [
         ['Проживание (Аренда)', 'expense', '🏠', true], ['Коммуналка', 'expense', '💡', true],
@@ -155,11 +168,11 @@ db.seedFamily = function(familyId, cb) {
         ['Одежда', 'expense', '👕', false], ['Зарплата', 'income', '💰', false]
     ];
     defaults.forEach(c => {
-        db.run('INSERT INTO categories (name, type, icon, is_mandatory, family_id) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING', [...c, familyId]);
+        db.run('INSERT INTO categories (name, type, icon, is_mandatory, family_id) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (name, family_id) DO NOTHING', [...c, familyId]);
     });
     
-    db.run('INSERT INTO goals (name, icon, type, amount_saved, target_amount, family_id) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING', ['Стоматолог', '🦷', 'savings_goal', 0, 100000, familyId]);
-    db.run('INSERT INTO goals (name, icon, type, amount_saved, target_amount, family_id) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING', ['Новая вещь', '👕', 'wishlist', 0, 5000, familyId]);
+    db.run('INSERT INTO goals (name, icon, type, amount_saved, target_amount, family_id) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (name, family_id) DO NOTHING', ['Стоматолог', '🦷', 'savings_goal', 0, 100000, familyId]);
+    db.run('INSERT INTO goals (name, icon, type, amount_saved, target_amount, family_id) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (name, family_id) DO NOTHING', ['Новая вещь', '👕', 'wishlist', 0, 5000, familyId]);
     
     if (cb) cb();
 };
