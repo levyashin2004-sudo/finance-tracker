@@ -171,6 +171,20 @@ bot.use((ctx, next) => {
 
 bot.use(stage.middleware());
 
+// Helper: notify all family members about a new join
+const notifyFamily = (familyId, newMemberName, excludeId) => {
+    db.all('SELECT telegram_id FROM users WHERE family_id = ? AND telegram_id != ?', [familyId, excludeId], (err, rows) => {
+        if (!err && rows) {
+            rows.forEach(r => {
+                bot.telegram.sendMessage(r.telegram_id, 
+                    `🎉 <b>${newMemberName || 'Новый участник'}</b> присоединился к вашему семейному бюджету!`, 
+                    {parse_mode: 'HTML'}
+                ).catch(() => {});
+            });
+        }
+    });
+};
+
 bot.start((ctx) => {
     const text = (ctx.message && ctx.message.text) || '';
     const payload = text.split(' ')[1]; // "/start join_123"
@@ -181,30 +195,39 @@ bot.start((ctx) => {
         if (!isNaN(parsed)) familyId = parsed;
     }
 
+    const userName = ctx.from.first_name || ctx.from.username || 'Участник';
+
     // Register user and handle family scoping
     db.get('SELECT * FROM users WHERE telegram_id = ?', [ctx.from.id], (err, row) => {
         if (!row) {
+            // New user
             db.run(
                 'INSERT INTO users (telegram_id, first_name, username, family_id) VALUES (?, ?, ?, ?)', 
                 [ctx.from.id, ctx.from.first_name, ctx.from.username, familyId],
                 () => {
                     if (familyId === ctx.from.id) {
-                        // Seed defaults ONLY for a brand new isolated family
                         db.seedFamily(familyId);
                     } else {
-                        ctx.reply('👨‍👩‍👧 Вы успешно присоединились к семейному бюджету!');
+                        ctx.reply(`👨‍👩‍👧 Вы присоединились к семейному бюджету!`);
+                        notifyFamily(familyId, userName, ctx.from.id);
                     }
                 }
             );
-        } else if (payload && payload.startsWith('join_')) {
-             // Move existing user to new family
-             db.run('UPDATE users SET family_id = ? WHERE telegram_id = ?', [familyId, ctx.from.id], () => {
-                 ctx.reply('👨‍👩‍👧 Вы переключились на новый семейный бюджет!');
-             });
+        } else {
+            // Existing user — always update name/username in case they changed
+            db.run('UPDATE users SET first_name = ?, username = ? WHERE telegram_id = ?', 
+                   [ctx.from.first_name, ctx.from.username, ctx.from.id]);
+
+            if (payload && payload.startsWith('join_') && row.family_id !== familyId) {
+                db.run('UPDATE users SET family_id = ? WHERE telegram_id = ?', [familyId, ctx.from.id], () => {
+                    ctx.reply('👨‍👩‍👧 Вы переключились на новый семейный бюджет!');
+                    notifyFamily(familyId, userName, ctx.from.id);
+                });
+            }
         }
     });
 
-    ctx.reply('Привет! Я ваш изолированный финансовый трекер. Что вам нужно?', Markup.keyboard([
+    ctx.reply(`Привет, ${userName}! Я ваш финансовый трекер.`, Markup.keyboard([
         ['📉 Добавить расход', '📈 Добавить доход'],
         ['📊 Дашборд', '🔗 Пригласить в семью']
     ]).resize());
