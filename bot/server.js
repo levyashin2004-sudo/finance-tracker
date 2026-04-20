@@ -224,6 +224,14 @@ app.delete('/api/recurring/:id', (req, res) => {
     db.run('DELETE FROM recurring_payments WHERE id = ? AND family_id = ?', [req.params.id, req.familyId], () => res.json({ success: true }));
 });
 
+// =======================
+// GLOBAL SYSTEM ERROR HANDLER
+// =======================
+app.use((err, req, res, next) => {
+    console.error('[API CRITICAL ERROR]', err.stack || err);
+    res.status(500).json({ success: false, error: 'Internal Server Error' });
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`API Server with Smart Goals running on ${PORT}`);

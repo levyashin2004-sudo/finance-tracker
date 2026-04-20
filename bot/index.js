@@ -50,10 +50,11 @@ const createTransactionWizard = (sceneId, typeName) => {
         },
         async (ctx) => {
             if (ctx.callbackQuery) {
+                await ctx.answerCbQuery().catch(() => {});
+                const action = ctx.callbackQuery.data;
                 if (action.startsWith('cat_')) {
                     ctx.wizard.state.catId = action.split('_')[1];
                     ctx.reply('Введите сумму и валюту (например: 500, 10 USD, 15 EUR):');
-                    ctx.answerCbQuery();
                     return ctx.wizard.next();
                 }
             } else {
@@ -71,7 +72,7 @@ const createTransactionWizard = (sceneId, typeName) => {
             let amount = parseFloat(match[1].replace(',', '.'));
             let currency = match[2] || 'RUB';
 
-            if (isNaN(amount) || amount <= 0) {
+            if (isNaN(amount) || !isFinite(amount) || amount <= 0) {
                 ctx.reply('Пожалуйста, введите корректное число больше нуля.');
                 return;
             }
@@ -189,10 +190,22 @@ if (process.env.RENDER_EXTERNAL_URL) {
 }
 
 // We need a webapp url for our Mini App dashboard
-bot.hears('📊 Дашборд', (ctx) => {
+bot.hears(/Дашборд/i, (ctx) => {
     ctx.reply('Ваша финансовая аналитика:', Markup.inlineKeyboard([
         Markup.button.webApp('Открыть Дашборд', dynamicWebAppUrl)
     ]));
+});
+
+// GLOBAL ERROR CATCHER FOR TELEGRAM
+bot.catch((err, ctx) => {
+    console.error(`[TELEGRAM CRITICAL ERROR] for ${ctx.updateType}:`, err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('[CRITICAL UNHANDLED REJECTION]', reason);
+});
+process.on('uncaughtException', (err) => {
+    console.error('[CRITICAL UNCAUGHT EXCEPTION]', err);
 });
 
 const startBot = async () => {
