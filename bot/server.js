@@ -77,26 +77,41 @@ app.get('/', (req, res) => {
 // GROUPS (FAMILIES) — New Group-centric API
 // =======================
 
+// Helper: migrate ALL data from oldFamilyId to newFamilyId
+const migrateAllFamilyData = (oldFamilyId, newFamilyId, cb) => {
+    const tables = ['categories', 'transactions', 'wallets', 'savings', 'investments', 'debts', 'recurring_payments', 'budgets', 'goals', 'transfers'];
+    let done = 0;
+    tables.forEach(table => {
+        db.run(`UPDATE ${table} SET family_id = ? WHERE family_id = ?`, [newFamilyId, oldFamilyId], () => {
+            done++;
+            if (done === tables.length && cb) cb();
+        });
+    });
+    if (tables.length === 0 && cb) cb();
+};
+
 // Get current user's group info + members
 app.get('/api/group', (req, res) => {
     db.get('SELECT f.* FROM families f JOIN users u ON u.family_id = f.id WHERE u.telegram_id = ?', [req.telegramId], (err, group) => {
         if (!group) {
-            // Auto-create family record for legacy users who don't have one
+            // Auto-create family record for legacy users
+            const oldFamilyId = req.familyId;
             const code = generateInviteCode();
             db.run('INSERT INTO families (name, invite_code, created_by) VALUES (?, ?, ?)',
                 ['Моя группа', code, req.telegramId], function(createErr) {
                     if (createErr) {
-                        // If insert fails, return fallback
-                        db.all('SELECT telegram_id, first_name, username FROM users WHERE family_id = ?', [req.familyId], (e, members) => {
-                            return res.json({ id: req.familyId, name: 'Моя группа', invite_code: '—', members: members || [] });
+                        db.all('SELECT telegram_id, first_name, username FROM users WHERE family_id = ?', [oldFamilyId], (e, members) => {
+                            return res.json({ id: oldFamilyId, name: 'Моя группа', invite_code: '—', members: members || [] });
                         });
                         return;
                     }
                     const newFamilyId = this.lastID;
-                    // Update all users in this old family to point to the new families row
-                    db.run('UPDATE users SET family_id = ? WHERE family_id = ?', [newFamilyId, req.familyId], () => {
-                        db.all('SELECT telegram_id, first_name, username FROM users WHERE family_id = ?', [newFamilyId], (e, members) => {
-                            res.json({ id: newFamilyId, name: 'Моя группа', invite_code: code, created_by: req.telegramId, members: members || [] });
+                    // Move users AND all data to the new family_id
+                    db.run('UPDATE users SET family_id = ? WHERE family_id = ?', [newFamilyId, oldFamilyId], () => {
+                        migrateAllFamilyData(oldFamilyId, newFamilyId, () => {
+                            db.all('SELECT telegram_id, first_name, username FROM users WHERE family_id = ?', [newFamilyId], (e, members) => {
+                                res.json({ id: newFamilyId, name: 'Моя группа', invite_code: code, created_by: req.telegramId, members: members || [] });
+                            });
                         });
                     });
                 });
@@ -112,14 +127,17 @@ app.get('/api/group', (req, res) => {
 app.post('/api/group', (req, res) => {
     const { name } = req.body;
     if (!name || !name.trim()) return res.status(400).json({ error: 'Название группы обязательно' });
+    const oldFamilyId = req.familyId;
     const code = generateInviteCode();
     db.run('INSERT INTO families (name, invite_code, created_by) VALUES (?, ?, ?)', [name.trim(), code, req.telegramId], function(err) {
         if (err) return res.status(500).json({ error: err.message });
         const newFamilyId = this.lastID;
-        // Move the user to the new group
+        // Move user to new group AND migrate all their data
         db.run('UPDATE users SET family_id = ? WHERE telegram_id = ?', [newFamilyId, req.telegramId], () => {
-            db.seedFamily(newFamilyId);
-            res.json({ id: newFamilyId, name: name.trim(), invite_code: code, success: true });
+            migrateAllFamilyData(oldFamilyId, newFamilyId, () => {
+                db.seedFamily(newFamilyId);
+                res.json({ id: newFamilyId, name: name.trim(), invite_code: code, success: true });
+            });
         });
     });
 });
