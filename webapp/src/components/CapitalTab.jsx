@@ -5,7 +5,8 @@ export default function CapitalTab() {
   const [savings, setSavings] = useState([]);
   const [investments, setInvestments] = useState([]);
   const [debts, setDebts] = useState([]);
-  const [usdRate, setUsdRate] = useState(90);
+  const [usdRate, setUsdRate] = useState(76.05);
+  const [eurRate, setEurRate] = useState(85.00);
 
   const fetchData = () => {
     fetch('/api/savings').then(r=>r.json()).then(setSavings);
@@ -18,6 +19,7 @@ export default function CapitalTab() {
       .then(data => {
         if(data && data.usdRate) {
           setUsdRate(data.usdRate);
+          if (data.eurRate) setEurRate(data.eurRate);
         }
       })
       .catch(console.error);
@@ -26,7 +28,12 @@ export default function CapitalTab() {
   useEffect(() => { fetchData(); }, []);
 
   const totalCapital = 
-    savings.reduce((acc, s) => acc + (s.currency === 'USD' ? s.amount * usdRate : s.amount), 0) +
+    savings.reduce((acc, s) => {
+        let valInRub = s.amount;
+        if(s.currency === 'USD') valInRub = s.amount * usdRate;
+        if(s.currency === 'EUR') valInRub = s.amount * eurRate;
+        return acc + valInRub;
+    }, 0) +
     investments.reduce((acc, i) => acc + i.amount, 0) -
     debts.reduce((acc, d) => acc + d.amount, 0);
 
@@ -50,7 +57,7 @@ export default function CapitalTab() {
                 {totalCapital.toLocaleString('ru-RU', {maximumFractionDigits: 0})} ₽
             </div>
             <div style={{fontSize: '0.8rem', color: '#64748b', marginTop: '5px'}}>
-                Курс ЦБ: 1$ = {usdRate.toFixed(2)} ₽
+                Курс: 1$={usdRate.toFixed(2)} ₽ | 1€={eurRate.toFixed(2)} ₽
             </div>
         </div>
 
@@ -60,8 +67,13 @@ export default function CapitalTab() {
                 <h3 className="section-title" style={{margin:0}}>Сбережения (Резервы)</h3>
                 <button className="add-btn-small" onClick={() => {
                     const name = prompt("Название (например, Наличные)");
+                    const currencyInput = prompt("Валюта: RUB, USD или EUR?", "RUB");
                     const amount = prompt("Сумма");
-                    if(name && amount) addEntity('savings', {name, currency: 'RUB', amount: parseFloat(amount)});
+                    
+                    if(name && amount && currencyInput) {
+                        const currency = currencyInput.trim().toUpperCase();
+                        addEntity('savings', {name, currency: currency, amount: parseFloat(amount)});
+                    }
                 }}><Plus size={14}/></button>
             </div>
             {savings.map(s => (

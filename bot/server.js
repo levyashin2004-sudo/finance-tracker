@@ -176,11 +176,17 @@ app.delete('/api/debts/:id', (req, res) => db.run('DELETE FROM debts WHERE id = 
 // Global Currency endpoint
 app.get('/api/currency', async (req, res) => {
     try {
-        const response = await fetch('https://www.cbr-xml-daily.ru/daily_json.js');
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
+        const response = await fetch('https://www.cbr-xml-daily.ru/daily_json.js', { signal: controller.signal });
+        clearTimeout(timeoutId);
         const data = await response.json();
-        res.json({ usdRate: data.Valute.USD.Value });
+        res.json({ 
+            usdRate: data.Valute.USD.Value,
+            eurRate: data.Valute.EUR.Value 
+        });
     } catch (e) {
-        res.json({ usdRate: 76.05 }); // Fallback actual rate
+        res.json({ usdRate: 76.05, eurRate: 85.00 }); // Fallback actual rate
     }
 });
 
