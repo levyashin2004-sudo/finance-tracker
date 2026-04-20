@@ -81,8 +81,26 @@ app.get('/', (req, res) => {
 app.get('/api/group', (req, res) => {
     db.get('SELECT f.* FROM families f JOIN users u ON u.family_id = f.id WHERE u.telegram_id = ?', [req.telegramId], (err, group) => {
         if (!group) {
-            // Fallback: group might not exist in families table yet (legacy users)
-            return res.json({ id: req.familyId, name: 'Моя группа', invite_code: '—', members: [] });
+            // Auto-create family record for legacy users who don't have one
+            const code = generateInviteCode();
+            db.run('INSERT INTO families (name, invite_code, created_by) VALUES (?, ?, ?)',
+                ['Моя группа', code, req.telegramId], function(createErr) {
+                    if (createErr) {
+                        // If insert fails, return fallback
+                        db.all('SELECT telegram_id, first_name, username FROM users WHERE family_id = ?', [req.familyId], (e, members) => {
+                            return res.json({ id: req.familyId, name: 'Моя группа', invite_code: '—', members: members || [] });
+                        });
+                        return;
+                    }
+                    const newFamilyId = this.lastID;
+                    // Update all users in this old family to point to the new families row
+                    db.run('UPDATE users SET family_id = ? WHERE family_id = ?', [newFamilyId, req.familyId], () => {
+                        db.all('SELECT telegram_id, first_name, username FROM users WHERE family_id = ?', [newFamilyId], (e, members) => {
+                            res.json({ id: newFamilyId, name: 'Моя группа', invite_code: code, created_by: req.telegramId, members: members || [] });
+                        });
+                    });
+                });
+            return;
         }
         db.all('SELECT telegram_id, first_name, username FROM users WHERE family_id = ?', [group.id], (err, members) => {
             res.json({ ...group, members: members || [] });
