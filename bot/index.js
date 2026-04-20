@@ -107,7 +107,7 @@ bot.start((ctx) => {
     ]).resize());
 });
 
-bot.hears('🔗 Пригласить в семью', (ctx) => {
+bot.hears(/Пригласить в семью/i, (ctx) => {
     db.get('SELECT family_id FROM users WHERE telegram_id = ?', [ctx.from.id], (err, row) => {
         const fId = row ? row.family_id : ctx.from.id;
         const link = `https://t.me/${ctx.botInfo.username}?start=join_${fId}`;
@@ -115,8 +115,12 @@ bot.hears('🔗 Пригласить в семью', (ctx) => {
     });
 });
 
-bot.hears('📉 Добавить расход', (ctx) => {
+bot.hears(/Добавить расход/i, (ctx) => {
     ctx.scene.enter(EXPENSE_WIZARD);
+});
+
+bot.hears(/Добавить доход/i, (ctx) => {
+    ctx.reply('В этом прототипе добавление доходов происходит напрямую в Дашборде через вкладку "Регулярные операции" или баланс кошелька. Откройте Дашборд!');
 });
 
 const localtunnel = require('localtunnel');
