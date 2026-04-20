@@ -9,63 +9,105 @@ const bot = new Telegraf(token);
 // Enable session tracking for multi-step scenarios
 bot.use(session());
 
-const EXPENSE_WIZARD = 'EXPENSE_WIZARD';
-const expenseWizard = new Scenes.WizardScene(
-    EXPENSE_WIZARD,
-    (ctx) => {
-        ctx.reply('Введите сумму расхода (например, 500):');
-        return ctx.wizard.next();
-    },
-    (ctx) => {
-        const amount = parseInt(ctx.message.text);
-        if (isNaN(amount) || amount <= 0) {
-            ctx.reply('Пожалуйста, введите корректное число больше нуля.');
-            return;
-        }
-        ctx.wizard.state.amount = amount;
-        
-        // Fetch categories dynamically
-        db.get('SELECT family_id FROM users WHERE telegram_id = ?', [ctx.from.id], (err, row) => {
-            const familyId = row ? row.family_id : ctx.from.id;
-            ctx.wizard.state.familyId = familyId;
-            
-            db.all('SELECT * FROM categories WHERE type = "expense" AND family_id = ?', [familyId], (err, rows) => {
-                if (err || !rows) return console.error(err);
-                if (rows.length === 0) {
-                    ctx.reply('У вас пока нет категорий расходов. Добавьте их через Дашборд!');
-                    return ctx.scene.leave();
-                }
-                const buttons = rows.map(r => Markup.button.callback(`${r.icon} ${r.name}`, `cat_${r.id}`));
-                const keyboard = [];
-                for(let i=0; i<buttons.length; i+=2) {
-                    keyboard.push(buttons.slice(i, i+2));
-                }
-                ctx.reply(`Сумма: ${amount} ₽\nВыберите категорию:`, Markup.inlineKeyboard(keyboard));
-            });
-        });
-        return ctx.wizard.next();
-    },
-    (ctx) => {
-        if (ctx.callbackQuery) {
-            const action = ctx.callbackQuery.data;
-            if (action.startsWith('cat_')) {
-                const catId = action.split('_')[1];
-                const amount = ctx.wizard.state.amount;
-                const userId = ctx.from.id;
-                const familyId = ctx.wizard.state.familyId;
-                
-                db.run('INSERT INTO transactions (amount, category_id, user_id, family_id) VALUES (?, ?, ?, ?)', [amount, catId, userId, familyId], function(err) {
-                    if (err) return console.error(err);
-                    ctx.reply('✅ Трата успешно сохранена!');
-                    ctx.answerCbQuery();
-                    ctx.scene.leave();
-                });
-            }
-        }
-    }
-);
+const fetch = require('node-fetch'); // we'll use global fetch if available, but let's assume global fetch exists in Node 22
 
-const stage = new Scenes.Stage([expenseWizard]);
+const getRates = async () => {
+    try {
+        const r = await fetch('https://www.cbr-xml-daily.ru/daily_json.js');
+        const data = await r.json();
+        return { USD: data.Valute.USD.Value, EUR: data.Valute.EUR.Value, RUB: 1 };
+    } catch(e) {
+        return { USD: 76.05, EUR: 85.00, RUB: 1 };
+    }
+};
+
+const cancelHandler = (ctx) => {
+    if (ctx.message && ctx.message.text && /(Дашборд|Добавить расход|Добавить доход|Пригласить в семью)/i.test(ctx.message.text)) {
+        ctx.scene.leave();
+        return true; 
+    }
+    return false;
+};
+
+const createTransactionWizard = (sceneId, typeName) => {
+    return new Scenes.WizardScene(
+        sceneId,
+        async (ctx) => {
+            if (cancelHandler(ctx)) return;
+            // Fetch categories dynamically
+            db.get('SELECT family_id FROM users WHERE telegram_id = ?', [ctx.from.id], (err, row) => {
+                const familyId = row ? row.family_id : ctx.from.id;
+                ctx.wizard.state.familyId = familyId;
+                
+                db.all(`SELECT * FROM categories WHERE type = ? AND family_id = ?`, [typeName, familyId], (err, rows) => {
+                    if (err || !rows) return console.error(err);
+                    if (rows.length === 0) {
+                        ctx.reply(`У вас пока нет категорий типа "${typeName}". Добавьте их через Дашборд!`);
+                        return ctx.scene.leave();
+                    }
+                    const buttons = rows.map(r => Markup.button.callback(`${r.icon} ${r.name}`, `cat_${r.id}`));
+                    const keyboard = [];
+                    for(let i=0; i<buttons.length; i+=2) {
+                        keyboard.push(buttons.slice(i, i+2));
+                    }
+                    ctx.reply(`Выберите категорию:`, Markup.inlineKeyboard(keyboard));
+                });
+            });
+            return ctx.wizard.next();
+        },
+        async (ctx) => {
+            if (ctx.callbackQuery) {
+                const action = ctx.callbackQuery.data;
+                if (action.startsWith('cat_')) {
+                    ctx.wizard.state.catId = action.split('_')[1];
+                    ctx.reply('Введите сумму и валюту (например: 500, 10 USD, 15 EUR):');
+                    ctx.answerCbQuery();
+                    return ctx.wizard.next();
+                }
+            } else if (cancelHandler(ctx)) return;
+            else {
+                ctx.reply('Пожалуйста, выберите категорию из кнопок выше.');
+            }
+        },
+        async (ctx) => {
+            if (cancelHandler(ctx)) return;
+            const text = (ctx.message.text || '').trim().toUpperCase();
+            // Parse amount and currency
+            const match = text.match(/^([\d.,]+)\s*(USD|EUR|RUB)?$/);
+            if (!match) {
+                ctx.reply('Неверный формат. Пожалуйста, введите сумму и валюту (например: 500, 10 USD):');
+                return;
+            }
+            let amount = parseFloat(match[1].replace(',', '.'));
+            let currency = match[2] || 'RUB';
+
+            if (isNaN(amount) || amount <= 0) {
+                ctx.reply('Пожалуйста, введите корректное число больше нуля.');
+                return;
+            }
+
+            const rates = await getRates();
+            let finalRub = amount;
+            if (currency === 'USD') finalRub = amount * rates.USD;
+            if (currency === 'EUR') finalRub = amount * rates.EUR;
+
+            const catId = ctx.wizard.state.catId;
+            const userId = ctx.from.id;
+            const familyId = ctx.wizard.state.familyId;
+            
+            db.run('INSERT INTO transactions (amount, category_id, user_id, family_id) VALUES (?, ?, ?, ?)', [finalRub, catId, userId, familyId], function(err) {
+                if (err) return console.error(err);
+                ctx.reply(`✅ Сохранено! Итого: ${finalRub.toLocaleString('ru-RU', {maximumFractionDigits:0})} ₽`);
+                ctx.scene.leave();
+            });
+        }
+    );
+};
+
+const expenseWizard = createTransactionWizard('EXPENSE_WIZARD', 'expense');
+const incomeWizard = createTransactionWizard('INCOME_WIZARD', 'income');
+
+const stage = new Scenes.Stage([expenseWizard, incomeWizard]);
 bot.use(stage.middleware());
 
 bot.start((ctx) => {
@@ -116,11 +158,11 @@ bot.hears(/Пригласить в семью/i, (ctx) => {
 });
 
 bot.hears(/Добавить расход/i, (ctx) => {
-    ctx.scene.enter(EXPENSE_WIZARD);
+    ctx.scene.enter('EXPENSE_WIZARD');
 });
 
 bot.hears(/Добавить доход/i, (ctx) => {
-    ctx.reply('В этом прототипе добавление доходов происходит напрямую в Дашборде через вкладку "Регулярные операции" или баланс кошелька. Откройте Дашборд!');
+    ctx.scene.enter('INCOME_WIZARD');
 });
 
 const localtunnel = require('localtunnel');
