@@ -22,19 +22,19 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* ============ BOTTOM NAV ============ */
+/* ============ BOTTOM NAV (8 tabs) ============ */
 .bottom-nav {
   position: fixed;
   bottom: 0; left: 0; right: 0;
-  height: 60px;
-  background: rgba(11, 15, 25, 0.92);
+  height: 56px;
+  background: rgba(11, 15, 25, 0.95);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border-top: 1px solid rgba(255,255,255,0.06);
   display: flex;
   justify-content: space-around;
   align-items: center;
-  padding: 0 4px;
+  padding: 0 2px;
   padding-bottom: env(safe-area-inset-bottom, 0);
   z-index: 1000;
 }
@@ -46,15 +46,16 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: #64748b;
+  color: #475569;
   cursor: pointer;
   transition: color 0.15s;
   flex: 1;
-  font-size: 0.6rem;
-  gap: 2px;
-  padding: 6px 2px;
+  font-size: 0.52rem;
+  gap: 1px;
+  padding: 4px 1px;
   font-weight: 500;
-  letter-spacing: 0.2px;
+  letter-spacing: 0.1px;
+  min-width: 0;
 }
 .nav-item:hover { color: #cbd5e1; }
 .nav-item.active { 

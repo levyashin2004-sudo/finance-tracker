@@ -1,10 +1,16 @@
 const express = require('express');
 const cors = require('cors');
 const db = require('./db.js');
+const crypto = require('crypto');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// Generate a 6-char invite code
+function generateInviteCode() {
+    return crypto.randomBytes(3).toString('hex').toUpperCase();
+}
 
 // Multi-tenant auth middleware
 app.use((req, res, next) => {
@@ -15,18 +21,28 @@ app.use((req, res, next) => {
         db.get('SELECT family_id FROM users WHERE telegram_id = ?', [tgId], (err, row) => {
             if (row) {
                 req.familyId = row.family_id;
+                req.telegramId = parseInt(tgId);
                 next();
             } else {
-                // Auto-register dynamically
-                req.familyId = parseInt(tgId);
+                // Auto-register dynamically — create a personal group
                 const safeTgId = parseInt(tgId);
+                req.telegramId = safeTgId;
                 if (!isNaN(safeTgId) && safeTgId > 0) {
-                    db.run('INSERT INTO users (telegram_id, first_name, username, family_id) VALUES (?, ?, ?, ?)', 
-                           [safeTgId, 'AppUser', '', safeTgId], () => {
-                        db.seedFamily(safeTgId);
-                    });
+                    const code = generateInviteCode();
+                    db.run('INSERT INTO families (name, invite_code, created_by) VALUES (?, ?, ?)', 
+                        [`Группа ${safeTgId}`, code, safeTgId], function(err) {
+                            const familyId = this.lastID || safeTgId;
+                            req.familyId = familyId;
+                            db.run('INSERT INTO users (telegram_id, first_name, username, family_id) VALUES (?, ?, ?, ?)', 
+                                [safeTgId, 'AppUser', '', familyId], () => {
+                                    db.seedFamily(familyId);
+                                });
+                            next();
+                        });
+                } else {
+                    req.familyId = parseInt(tgId);
+                    next();
                 }
-                next();
             }
         });
     } else {
@@ -56,6 +72,143 @@ app.get('/', (req, res) => {
 // =======================
 // CRON JOBS — handled in index.js (processRecurringPayments)
 // =======================
+
+// =======================
+// GROUPS (FAMILIES) — New Group-centric API
+// =======================
+
+// Get current user's group info + members
+app.get('/api/group', (req, res) => {
+    db.get('SELECT f.* FROM families f JOIN users u ON u.family_id = f.id WHERE u.telegram_id = ?', [req.telegramId], (err, group) => {
+        if (!group) {
+            // Fallback: group might not exist in families table yet (legacy users)
+            return res.json({ id: req.familyId, name: 'Моя группа', invite_code: '—', members: [] });
+        }
+        db.all('SELECT telegram_id, first_name, username FROM users WHERE family_id = ?', [group.id], (err, members) => {
+            res.json({ ...group, members: members || [] });
+        });
+    });
+});
+
+// Create a new group (and move current user to it)
+app.post('/api/group', (req, res) => {
+    const { name } = req.body;
+    if (!name || !name.trim()) return res.status(400).json({ error: 'Название группы обязательно' });
+    const code = generateInviteCode();
+    db.run('INSERT INTO families (name, invite_code, created_by) VALUES (?, ?, ?)', [name.trim(), code, req.telegramId], function(err) {
+        if (err) return res.status(500).json({ error: err.message });
+        const newFamilyId = this.lastID;
+        // Move the user to the new group
+        db.run('UPDATE users SET family_id = ? WHERE telegram_id = ?', [newFamilyId, req.telegramId], () => {
+            db.seedFamily(newFamilyId);
+            res.json({ id: newFamilyId, name: name.trim(), invite_code: code, success: true });
+        });
+    });
+});
+
+// Update group name
+app.put('/api/group', (req, res) => {
+    const { name } = req.body;
+    if (!name) return res.status(400).json({ error: 'Name required' });
+    db.run('UPDATE families SET name = ? WHERE id = ?', [name.trim(), req.familyId], () => res.json({ success: true }));
+});
+
+// Search groups by name or invite code
+app.get('/api/groups/search', (req, res) => {
+    const q = (req.query.q || '').trim();
+    if (!q || q.length < 2) return res.json([]);
+    // Search by name (partial) or exact invite code
+    db.all(`SELECT f.id, f.name, f.invite_code, 
+            (SELECT COUNT(*) FROM users WHERE family_id = f.id) as member_count
+            FROM families f 
+            WHERE LOWER(f.name) LIKE LOWER(?) OR UPPER(f.invite_code) = UPPER(?)
+            LIMIT 20`, 
+        [`%${q}%`, q], (err, rows) => {
+            res.json(rows || []);
+        });
+});
+
+// Join a group by invite code
+app.post('/api/group/join', (req, res) => {
+    const { invite_code } = req.body;
+    if (!invite_code) return res.status(400).json({ error: 'Нужен код приглашения' });
+    
+    const code = invite_code.trim().toUpperCase();
+    db.get('SELECT id, name FROM families WHERE UPPER(invite_code) = ?', [code], (err, group) => {
+        if (!group) return res.status(404).json({ error: 'Группа не найдена. Проверьте код.' });
+        db.run('UPDATE users SET family_id = ? WHERE telegram_id = ?', [group.id, req.telegramId], () => {
+            res.json({ success: true, family_id: group.id, group_name: group.name });
+        });
+    });
+});
+
+// Leave group (create a new personal group)
+app.post('/api/group/leave', (req, res) => {
+    const code = generateInviteCode();
+    db.run('INSERT INTO families (name, invite_code, created_by) VALUES (?, ?, ?)', 
+        ['Личная группа', code, req.telegramId], function(err) {
+            const newId = this.lastID;
+            db.run('UPDATE users SET family_id = ? WHERE telegram_id = ?', [newId, req.telegramId], () => {
+                db.seedFamily(newId);
+                res.json({ success: true, new_family_id: newId });
+            });
+        });
+});
+
+// Remove a member from the group (admin-only: creator)
+app.post('/api/group/kick', (req, res) => {
+    const { member_id } = req.body;
+    if (parseInt(member_id) === req.telegramId) return res.status(400).json({ error: 'Нельзя удалить себя' });
+    // Only group creator can kick
+    db.get('SELECT created_by FROM families WHERE id = ?', [req.familyId], (err, group) => {
+        if (!group || group.created_by !== req.telegramId) {
+            return res.status(403).json({ error: 'Только создатель группы может удалять участников' });
+        }
+        const code = generateInviteCode();
+        db.run('INSERT INTO families (name, invite_code, created_by) VALUES (?, ?, ?)', 
+            ['Личная группа', code, member_id], function() {
+                db.run('UPDATE users SET family_id = ? WHERE telegram_id = ?', [this.lastID, member_id], () => {
+                    res.json({ success: true });
+                });
+            });
+    });
+});
+
+// Legacy join endpoint (keep for backward-compat)
+app.post('/api/family/join', (req, res) => {
+    let { inviteCode } = req.body;
+    if (!inviteCode) return res.status(400).json({ success: false, error: 'No invite code' });
+    
+    const telegramId = req.headers['x-telegram-id'];
+    if (!telegramId) return res.status(401).json({ success: false, error: 'Unauthorized' });
+
+    inviteCode = inviteCode.trim().replace(/^@/, '');
+
+    const applyJoin = (targetFamilyId) => {
+        db.run('UPDATE users SET family_id = ? WHERE telegram_id = ?', [targetFamilyId, telegramId], () => {
+            res.json({ success: true, family_id: targetFamilyId });
+        });
+    };
+
+    // Try invite code first
+    db.get('SELECT id FROM families WHERE UPPER(invite_code) = UPPER(?)', [inviteCode], (err, fam) => {
+        if (fam) return applyJoin(fam.id);
+        
+        // Extract digits — if input contains numbers, use them as family_id directly
+        const digits = inviteCode.replace(/\D/g, '');
+        if (digits.length >= 5) {
+            return applyJoin(parseInt(digits));
+        }
+
+        // Otherwise try username lookup in our DB
+        db.get('SELECT family_id FROM users WHERE LOWER(username) = LOWER(?)', [inviteCode], (err, row) => {
+            if (err || !row) {
+                return res.status(404).json({ success: false, error: 'Не найден. Убедитесь, что человек хотя бы раз открывал бота.' });
+            }
+            applyJoin(row.family_id);
+        });
+    });
+});
 
 // =======================
 // TRANSACTIONS & SMART ALLOCATION
@@ -167,36 +320,6 @@ app.delete('/api/allocation_rules/:id', (req, res) => {
 app.get('/api/family', (req, res) => {
     db.all('SELECT first_name, username, telegram_id, family_id FROM users WHERE family_id = ?', [req.familyId], (err, rows) => {
         res.json(rows || []);
-    });
-});
-
-app.post('/api/family/join', (req, res) => {
-    let { inviteCode } = req.body;
-    if (!inviteCode) return res.status(400).json({ success: false, error: 'No invite code' });
-    
-    const telegramId = req.headers['x-telegram-id'];
-    if (!telegramId) return res.status(401).json({ success: false, error: 'Unauthorized' });
-
-    inviteCode = inviteCode.trim().replace(/^@/, '');
-
-    const applyJoin = (targetFamilyId) => {
-        db.run('UPDATE users SET family_id = ? WHERE telegram_id = ?', [targetFamilyId, telegramId], () => {
-            res.json({ success: true, family_id: targetFamilyId });
-        });
-    };
-
-    // Extract digits — if input contains numbers, use them as family_id directly
-    const digits = inviteCode.replace(/\D/g, '');
-    if (digits.length >= 5) {
-        return applyJoin(parseInt(digits));
-    }
-
-    // Otherwise try username lookup in our DB
-    db.get('SELECT family_id FROM users WHERE LOWER(username) = LOWER(?)', [inviteCode], (err, row) => {
-        if (err || !row) {
-            return res.status(404).json({ success: false, error: 'Не найден. Убедитесь, что человек хотя бы раз открывал бота.' });
-        }
-        applyJoin(row.family_id);
     });
 });
 
@@ -319,6 +442,35 @@ app.delete('/api/transfers/:id', (req, res) => {
         } else {
             res.status(404).json({error: "Transfer not found"});
         }
+    });
+});
+
+// =======================
+// CSV EXPORT
+// =======================
+app.get('/api/export/csv', (req, res) => {
+    const query = `
+        SELECT t.amount, t.date, t.description, c.name as category, c.type, 
+               u.first_name as user, w.name as wallet
+        FROM transactions t
+        JOIN categories c ON t.category_id = c.id
+        LEFT JOIN users u ON t.user_id = u.telegram_id
+        LEFT JOIN wallets w ON t.wallet_id = w.id
+        WHERE t.family_id = ?
+        ORDER BY t.date DESC
+    `;
+    db.all(query, [req.familyId], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        const header = 'Дата,Тип,Категория,Сумма,Кошелёк,Кто,Описание\n';
+        const csv = (rows || []).map(r => {
+            const date = new Date(r.date).toLocaleDateString('ru-RU');
+            const type = r.type === 'income' ? 'Доход' : 'Расход';
+            const desc = (r.description || '').replace(/,/g, ';');
+            return `${date},${type},${r.category},${r.amount},${r.wallet || ''},${r.user || ''},${desc}`;
+        }).join('\n');
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', 'attachment; filename=transactions.csv');
+        res.send('\uFEFF' + header + csv); // BOM for Excel UTF-8
     });
 });
 

@@ -1,55 +1,56 @@
 import React, { useState } from 'react';
 import './index.css';
 import './layout.css';
-import MainTab from './components/MainTab';
-import BalanceTab from './components/BalanceTab';
-import CapitalTab from './components/CapitalTab';
-import SettingsTab from './components/SettingsTab';
-import GoalsTab from './components/GoalsTab';
+import DashboardTab from './components/DashboardTab';
+import TransactionsTab from './components/TransactionsTab';
+import BudgetsTab from './components/BudgetsTab';
 import ForecastTab from './components/ForecastTab';
-import { LayoutDashboard, Wallet, Briefcase, Settings, Target, Calendar } from 'lucide-react';
+import GoalsTab from './components/GoalsTab';
+import CapitalTab from './components/CapitalTab';
+import FamilyTab from './components/FamilyTab';
+import SettingsTab from './components/SettingsTab';
+import { LayoutDashboard, Receipt, PieChart, TrendingUp, Target, Briefcase, Users, Settings } from 'lucide-react';
+
+const TABS = [
+  { id: 'dashboard', label: 'Сводка', icon: LayoutDashboard },
+  { id: 'transactions', label: 'Операции', icon: Receipt },
+  { id: 'budgets', label: 'Бюджеты', icon: PieChart },
+  { id: 'forecast', label: 'Прогноз', icon: TrendingUp },
+  { id: 'goals', label: 'Цели', icon: Target },
+  { id: 'capital', label: 'Капитал', icon: Briefcase },
+  { id: 'family', label: 'Группа', icon: Users },
+  { id: 'settings', label: 'Настройки', icon: Settings },
+];
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('main');
+  const [activeTab, setActiveTab] = useState('dashboard');
+
+  const renderTab = () => {
+    switch (activeTab) {
+      case 'dashboard': return <DashboardTab />;
+      case 'transactions': return <TransactionsTab />;
+      case 'budgets': return <BudgetsTab />;
+      case 'forecast': return <ForecastTab />;
+      case 'goals': return <GoalsTab />;
+      case 'capital': return <CapitalTab />;
+      case 'family': return <FamilyTab />;
+      case 'settings': return <SettingsTab />;
+      default: return <DashboardTab />;
+    }
+  };
 
   return (
     <div className="app-layout">
-      {/* Dynamic Content Area */}
       <div className="tab-container">
-        {activeTab === 'main' && <MainTab />}
-        {activeTab === 'balance' && <BalanceTab />}
-        {activeTab === 'forecast' && <ForecastTab />}
-        {activeTab === 'capital' && <CapitalTab />}
-        {activeTab === 'goals' && <GoalsTab />}
-        {activeTab === 'settings' && <SettingsTab />}
+        {renderTab()}
       </div>
-
-      {/* Bottom Navigation Bar */}
       <nav className="bottom-nav">
-        <button className={`nav-item ${activeTab === 'main' ? 'active' : ''}`} onClick={() => setActiveTab('main')}>
-          <LayoutDashboard size={22} />
-          <span>Сводка</span>
-        </button>
-        <button className={`nav-item ${activeTab === 'balance' ? 'active' : ''}`} onClick={() => setActiveTab('balance')}>
-          <Wallet size={22} />
-          <span>Баланс</span>
-        </button>
-        <button className={`nav-item ${activeTab === 'forecast' ? 'active' : ''}`} onClick={() => setActiveTab('forecast')}>
-          <Calendar size={22} />
-          <span>Прогноз</span>
-        </button>
-        <button className={`nav-item ${activeTab === 'goals' ? 'active' : ''}`} onClick={() => setActiveTab('goals')}>
-          <Target size={22} />
-          <span>Цели</span>
-        </button>
-        <button className={`nav-item ${activeTab === 'capital' ? 'active' : ''}`} onClick={() => setActiveTab('capital')}>
-          <Briefcase size={22} />
-          <span>Капитал</span>
-        </button>
-        <button className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')}>
-          <Settings size={22} />
-          <span>Настройки</span>
-        </button>
+        {TABS.map(tab => (
+          <button key={tab.id} className={`nav-item ${activeTab === tab.id ? 'active' : ''}`} onClick={() => setActiveTab(tab.id)}>
+            <tab.icon size={18} />
+            <span>{tab.label}</span>
+          </button>
+        ))}
       </nav>
     </div>
   );

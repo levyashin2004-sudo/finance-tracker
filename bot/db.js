@@ -119,33 +119,55 @@ if (usePostgres) {
     };
 }
 
+// Safe migration helper: SQLite doesn't support IF NOT EXISTS on ALTER TABLE
+const safeAddColumn = (table, column, type) => {
+    db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`, [], function(err) {
+        // Silently ignore "duplicate column" errors — column already exists
+    });
+};
+
 // INITIALIZATION LOGIC (Runs on worker start)
 db.serialize(() => {
-    // 1. Initial creations (kept for clean startups)
-    db.run(`CREATE TABLE IF NOT EXISTS users (telegram_id BIGINT PRIMARY KEY, first_name TEXT, username TEXT, family_id BIGINT)`);
-    db.run(`CREATE TABLE IF NOT EXISTS categories (id SERIAL PRIMARY KEY, name TEXT, type TEXT, icon TEXT, is_mandatory BOOLEAN DEFAULT false, planned_amount NUMERIC DEFAULT 0, family_id BIGINT)`);
-    db.run(`CREATE TABLE IF NOT EXISTS transactions (id SERIAL PRIMARY KEY, amount NUMERIC, category_id INTEGER, user_id BIGINT, date TIMESTAMP DEFAULT CURRENT_TIMESTAMP, description TEXT, family_id BIGINT, wallet_id INTEGER)`);
-    db.run(`CREATE TABLE IF NOT EXISTS wallets (id SERIAL PRIMARY KEY, name TEXT, icon TEXT, amount NUMERIC DEFAULT 0, family_id BIGINT)`);
-    db.run(`CREATE TABLE IF NOT EXISTS savings (id SERIAL PRIMARY KEY, user_id BIGINT, name TEXT, currency TEXT, amount NUMERIC, family_id BIGINT)`);
-    db.run(`CREATE TABLE IF NOT EXISTS investments (id SERIAL PRIMARY KEY, name TEXT, icon TEXT, amount NUMERIC, family_id BIGINT)`);
-    db.run(`CREATE TABLE IF NOT EXISTS debts (id SERIAL PRIMARY KEY, name TEXT, amount NUMERIC, family_id BIGINT)`);
-    db.run(`CREATE TABLE IF NOT EXISTS recurring_payments (id SERIAL PRIMARY KEY, name TEXT, amount NUMERIC, category_id INTEGER, user_id BIGINT, day_of_month INTEGER, type TEXT, family_id BIGINT, wallet_id INTEGER, last_processed_date TEXT)`);
-    db.run(`CREATE TABLE IF NOT EXISTS budgets (id SERIAL PRIMARY KEY, name TEXT, icon TEXT, type TEXT, planned_amount NUMERIC DEFAULT 0, family_id BIGINT)`);
-    db.run(`CREATE TABLE IF NOT EXISTS goals (id SERIAL PRIMARY KEY, name TEXT, icon TEXT, type TEXT, amount_saved NUMERIC DEFAULT 0, target_amount NUMERIC DEFAULT 0, family_id BIGINT)`);
-    db.run(`CREATE TABLE IF NOT EXISTS allocation_rules (id SERIAL PRIMARY KEY, target_goal_id INTEGER, percentage NUMERIC DEFAULT 0)`);
-    db.run(`CREATE TABLE IF NOT EXISTS transfers (id SERIAL PRIMARY KEY, amount NUMERIC, from_wallet_id INTEGER, to_wallet_id INTEGER, date TIMESTAMP DEFAULT CURRENT_TIMESTAMP, family_id BIGINT)`);
+    if (usePostgres) {
+        // PostgreSQL — use SERIAL, BIGINT, NUMERIC, TIMESTAMP
+        db.run(`CREATE TABLE IF NOT EXISTS users (telegram_id BIGINT PRIMARY KEY, first_name TEXT, username TEXT, family_id BIGINT)`);
+        db.run(`CREATE TABLE IF NOT EXISTS families (id SERIAL PRIMARY KEY, name TEXT NOT NULL, invite_code TEXT UNIQUE, created_by BIGINT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
+        db.run(`CREATE TABLE IF NOT EXISTS categories (id SERIAL PRIMARY KEY, name TEXT, type TEXT, icon TEXT, is_mandatory BOOLEAN DEFAULT false, planned_amount NUMERIC DEFAULT 0, family_id BIGINT)`);
+        db.run(`CREATE TABLE IF NOT EXISTS transactions (id SERIAL PRIMARY KEY, amount NUMERIC, category_id INTEGER, user_id BIGINT, date TIMESTAMP DEFAULT CURRENT_TIMESTAMP, description TEXT, family_id BIGINT, wallet_id INTEGER)`);
+        db.run(`CREATE TABLE IF NOT EXISTS wallets (id SERIAL PRIMARY KEY, name TEXT, icon TEXT, amount NUMERIC DEFAULT 0, family_id BIGINT)`);
+        db.run(`CREATE TABLE IF NOT EXISTS savings (id SERIAL PRIMARY KEY, user_id BIGINT, name TEXT, currency TEXT, amount NUMERIC, family_id BIGINT)`);
+        db.run(`CREATE TABLE IF NOT EXISTS investments (id SERIAL PRIMARY KEY, name TEXT, icon TEXT, amount NUMERIC, family_id BIGINT)`);
+        db.run(`CREATE TABLE IF NOT EXISTS debts (id SERIAL PRIMARY KEY, name TEXT, amount NUMERIC, family_id BIGINT)`);
+        db.run(`CREATE TABLE IF NOT EXISTS recurring_payments (id SERIAL PRIMARY KEY, name TEXT, amount NUMERIC, category_id INTEGER, user_id BIGINT, day_of_month INTEGER, type TEXT, family_id BIGINT, wallet_id INTEGER, last_processed_date TEXT)`);
+        db.run(`CREATE TABLE IF NOT EXISTS budgets (id SERIAL PRIMARY KEY, name TEXT, icon TEXT, type TEXT, planned_amount NUMERIC DEFAULT 0, family_id BIGINT)`);
+        db.run(`CREATE TABLE IF NOT EXISTS goals (id SERIAL PRIMARY KEY, name TEXT, icon TEXT, type TEXT, amount_saved NUMERIC DEFAULT 0, target_amount NUMERIC DEFAULT 0, family_id BIGINT)`);
+        db.run(`CREATE TABLE IF NOT EXISTS allocation_rules (id SERIAL PRIMARY KEY, target_goal_id INTEGER, percentage NUMERIC DEFAULT 0)`);
+        db.run(`CREATE TABLE IF NOT EXISTS transfers (id SERIAL PRIMARY KEY, amount NUMERIC, from_wallet_id INTEGER, to_wallet_id INTEGER, date TIMESTAMP DEFAULT CURRENT_TIMESTAMP, family_id BIGINT)`);
+    } else {
+        // SQLite — use INTEGER PRIMARY KEY AUTOINCREMENT, REAL, DATETIME
+        db.run(`CREATE TABLE IF NOT EXISTS users (telegram_id INTEGER PRIMARY KEY, first_name TEXT, username TEXT, family_id INTEGER)`);
+        db.run(`CREATE TABLE IF NOT EXISTS families (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, invite_code TEXT UNIQUE, created_by INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`);
+        db.run(`CREATE TABLE IF NOT EXISTS categories (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, type TEXT, icon TEXT, is_mandatory BOOLEAN DEFAULT 0, planned_amount REAL DEFAULT 0, family_id INTEGER)`);
+        db.run(`CREATE TABLE IF NOT EXISTS transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, amount REAL, category_id INTEGER, user_id INTEGER, date DATETIME DEFAULT CURRENT_TIMESTAMP, description TEXT, family_id INTEGER, wallet_id INTEGER)`);
+        db.run(`CREATE TABLE IF NOT EXISTS wallets (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, icon TEXT, amount REAL DEFAULT 0, family_id INTEGER)`);
+        db.run(`CREATE TABLE IF NOT EXISTS savings (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, name TEXT, currency TEXT, amount REAL, family_id INTEGER)`);
+        db.run(`CREATE TABLE IF NOT EXISTS investments (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, icon TEXT, amount REAL, family_id INTEGER)`);
+        db.run(`CREATE TABLE IF NOT EXISTS debts (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, amount REAL, family_id INTEGER)`);
+        db.run(`CREATE TABLE IF NOT EXISTS recurring_payments (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, amount REAL, category_id INTEGER, user_id INTEGER, day_of_month INTEGER, type TEXT, family_id INTEGER, wallet_id INTEGER, last_processed_date TEXT)`);
+        db.run(`CREATE TABLE IF NOT EXISTS budgets (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, icon TEXT, type TEXT, planned_amount REAL DEFAULT 0, family_id INTEGER)`);
+        db.run(`CREATE TABLE IF NOT EXISTS goals (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, icon TEXT, type TEXT, amount_saved REAL DEFAULT 0, target_amount REAL DEFAULT 0, family_id INTEGER)`);
+        db.run(`CREATE TABLE IF NOT EXISTS allocation_rules (id INTEGER PRIMARY KEY AUTOINCREMENT, target_goal_id INTEGER, percentage REAL DEFAULT 0)`);
+        db.run(`CREATE TABLE IF NOT EXISTS transfers (id INTEGER PRIMARY KEY AUTOINCREMENT, amount REAL, from_wallet_id INTEGER, to_wallet_id INTEGER, date DATETIME DEFAULT CURRENT_TIMESTAMP, family_id INTEGER)`);
+    }
 
-    // 2. Perform Migrations for existing tables
+    // 2. Perform Migrations: safely add columns (ignore if exists)
     const tablesToMigrate = ['users', 'categories', 'transactions', 'wallets', 'savings', 'investments', 'debts', 'recurring_payments', 'budgets', 'goals', 'transfers'];
-    tablesToMigrate.forEach(table => {
-        db.run(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS family_id BIGINT`);
-    });
-    // Migrate transaction/recurring tables to attach wallet and processing dates
-    db.run(`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS wallet_id INTEGER`);
-    db.run(`ALTER TABLE recurring_payments ADD COLUMN IF NOT EXISTS wallet_id INTEGER`);
-    db.run(`ALTER TABLE recurring_payments ADD COLUMN IF NOT EXISTS last_processed_date TEXT`);
+    tablesToMigrate.forEach(table => safeAddColumn(table, 'family_id', usePostgres ? 'BIGINT' : 'INTEGER'));
+    safeAddColumn('transactions', 'wallet_id', 'INTEGER');
+    safeAddColumn('recurring_payments', 'wallet_id', 'INTEGER');
+    safeAddColumn('recurring_payments', 'last_processed_date', 'TEXT');
 
-    // 3. Drop existing unique constraints that conflict with multi-tenancy
+    // 3. Postgres-only constraint migrations
     if (usePostgres && db._pool) {
         db._pool.query(`
             DO $$
@@ -165,10 +187,12 @@ db.serialize(() => {
                 IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'goals_name_family_unique') THEN
                     ALTER TABLE goals ADD CONSTRAINT goals_name_family_unique UNIQUE (name, family_id);
                 END IF;
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'families_invite_code_key') THEN
+                    ALTER TABLE families ADD CONSTRAINT families_invite_code_key UNIQUE (invite_code);
+                END IF;
             END $$;
         `).catch(err => console.error("Migration error:", err));
     }
-    // Seeds are now handled during user registration in index.js to support per-family seeding
 });
 
 module.exports = db;
