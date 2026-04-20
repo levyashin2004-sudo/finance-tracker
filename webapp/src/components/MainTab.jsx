@@ -63,6 +63,38 @@ export default function MainTab() {
             <div style={{fontSize: '3rem', fontWeight: 800, color: '#fff'}}>
                 {totalCards.toLocaleString('ru-RU')} ₽
             </div>
+            
+            <div style={{display: 'flex', flexWrap: 'wrap', gap: '10px', justifyContent: 'center', marginTop: '15px'}}>
+                {wallets.map(w => (
+                    <div key={w.id} style={{background: 'rgba(255,255,255,0.05)', padding: '5px 15px', borderRadius: '15px', fontSize: '0.9rem'}}>
+                        {w.icon} {w.name}: <strong style={{color:'#10b981'}}>{w.amount.toLocaleString()} ₽</strong>
+                    </div>
+                ))}
+            </div>
+
+            <button className="add-btn-small" style={{marginTop: '15px', background: 'rgba(123, 97, 255, 0.3)', width: 'auto', padding: '8px 20px'}} onClick={() => {
+                if (wallets.length < 2) return alert('Нужно минимум 2 кошелька для перевода');
+                const fromIdStr = prompt('Откуда списать? Введите число (1-Карта, 2-Наличка и т.д.):\n' + wallets.map((w,i) => `${i+1} - ${w.name}`).join('\n'));
+                if (!fromIdStr) return;
+                const toIdStr = prompt('Куда зачислить? Введите число (1-Карта, 2-Наличка и т.д.):\n' + wallets.map((w,i) => `${i+1} - ${w.name}`).join('\n'));
+                if (!toIdStr) return;
+                const amountStr = prompt('Введите сумму перевода:');
+                if (!amountStr) return;
+
+                const fromId = wallets[parseInt(fromIdStr)-1]?.id;
+                const toId = wallets[parseInt(toIdStr)-1]?.id;
+                const amount = parseFloat(amountStr);
+
+                if (fromId && toId && amount && fromId !== toId) {
+                    fetch('/api/transfers', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ amount, from_wallet_id: fromId, to_wallet_id: toId })
+                    }).then(fetchData);
+                } else {
+                    alert('Ошибка ввода данных перевода.');
+                }
+            }}>⇆ Сделать перевод</button>
       </div>
 
       <div className="glass-card">

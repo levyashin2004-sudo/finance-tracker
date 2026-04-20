@@ -50,11 +50,12 @@ cron.schedule('0 9 * * *', () => {
 // =======================
 app.get('/api/transactions', (req, res) => {
     const query = `
-        SELECT t.id, t.amount, t.date, t.description, c.name as category_name, c.icon as category_icon, 
-               c.type as category_type, c.is_mandatory, u.first_name as user_name
+        SELECT t.id, t.amount, t.date, t.description, t.wallet_id, c.name as category_name, c.icon as category_icon, 
+               c.type as category_type, c.is_mandatory, u.first_name as user_name, w.name as wallet_name
         FROM transactions t
         JOIN categories c ON t.category_id = c.id
         LEFT JOIN users u ON t.user_id = u.telegram_id
+        LEFT JOIN wallets w ON t.wallet_id = w.id
         WHERE t.family_id = ?
         ORDER BY t.date DESC
     `;
@@ -65,8 +66,8 @@ app.post('/api/transactions', (req, res) => {
     const { amount, category_id, user_id, description, date, wallet_id } = req.body;
     const txDate = date ? new Date(date).toISOString() : new Date().toISOString();
     
-    db.run('INSERT INTO transactions (amount, category_id, user_id, description, date, family_id) VALUES (?, ?, ?, ?, ?, ?)', 
-        [amount, category_id, user_id, description, txDate, req.familyId], function(err) {
+    db.run('INSERT INTO transactions (amount, category_id, user_id, description, date, family_id, wallet_id) VALUES (?, ?, ?, ?, ?, ?, ?)', 
+        [amount, category_id, user_id, description, txDate, req.familyId, wallet_id || null], function(err) {
         if (err) return res.status(500).json({error: err.message});
         
         if (wallet_id) {
@@ -102,7 +103,14 @@ app.post('/api/transactions', (req, res) => {
 });
 
 app.delete('/api/transactions/:id', (req, res) => {
-    db.run('DELETE FROM transactions WHERE id = ? AND family_id = ?', [req.params.id, req.familyId], () => res.json({ success: true }));
+    // REVERSAL LOGIC: Restore money to the wallet when a transaction is deleted!
+    db.get('SELECT t.amount, t.wallet_id, c.type FROM transactions t JOIN categories c ON t.category_id = c.id WHERE t.id = ? AND t.family_id = ?', [req.params.id, req.familyId], (err, tx) => {
+        if (!err && tx && tx.wallet_id) {
+            const modifier = tx.type === 'expense' ? '+' : '-'; // Inverse of creation
+            db.run(`UPDATE wallets SET amount = amount ${modifier} ? WHERE id = ? AND family_id = ?`, [tx.amount, tx.wallet_id, req.familyId]);
+        }
+        db.run('DELETE FROM transactions WHERE id = ? AND family_id = ?', [req.params.id, req.familyId], () => res.json({ success: true }));
+    });
 });
 
 // =======================
@@ -222,6 +230,44 @@ app.put('/api/recurring/:id', (req, res) => {
 });
 app.delete('/api/recurring/:id', (req, res) => {
     db.run('DELETE FROM recurring_payments WHERE id = ? AND family_id = ?', [req.params.id, req.familyId], () => res.json({ success: true }));
+});
+
+// =======================
+// TRANSFERS (WALLET TO WALLET)
+// =======================
+app.get('/api/transfers', (req, res) => {
+    const query = `
+        SELECT t.*, w1.name as from_wallet_name, w2.name as to_wallet_name
+        FROM transfers t
+        JOIN wallets w1 ON t.from_wallet_id = w1.id
+        JOIN wallets w2 ON t.to_wallet_id = w2.id
+        WHERE t.family_id = ?
+        ORDER BY t.date DESC
+    `;
+    db.all(query, [req.familyId], (err, rows) => res.json(rows||[]));
+});
+app.post('/api/transfers', (req, res) => {
+    const { amount, from_wallet_id, to_wallet_id } = req.body;
+    db.run('INSERT INTO transfers (amount, from_wallet_id, to_wallet_id, family_id) VALUES (?, ?, ?, ?)', 
+        [amount, from_wallet_id, to_wallet_id, req.familyId], function(err) {
+        if (!err) {
+            db.run(`UPDATE wallets SET amount = amount - ? WHERE id = ? AND family_id = ?`, [amount, from_wallet_id, req.familyId]);
+            db.run(`UPDATE wallets SET amount = amount + ? WHERE id = ? AND family_id = ?`, [amount, to_wallet_id, req.familyId]);
+        }
+        res.json({ id: this.lastID, success: true });
+    });
+});
+app.delete('/api/transfers/:id', (req, res) => {
+    db.get('SELECT * FROM transfers WHERE id = ? AND family_id = ?', [req.params.id, req.familyId], (err, row) => {
+        if (!err && row) {
+            // Reversal logic
+            db.run(`UPDATE wallets SET amount = amount + ? WHERE id = ? AND family_id = ?`, [row.amount, row.from_wallet_id, req.familyId]);
+            db.run(`UPDATE wallets SET amount = amount - ? WHERE id = ? AND family_id = ?`, [row.amount, row.to_wallet_id, req.familyId]);
+            db.run('DELETE FROM transfers WHERE id = ? AND family_id = ?', [req.params.id, req.familyId], () => res.json({ success: true }));
+        } else {
+            res.status(404).json({error: "Transfer not found"});
+        }
+    });
 });
 
 // =======================

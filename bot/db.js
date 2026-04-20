@@ -124,21 +124,26 @@ db.serialize(() => {
     // 1. Initial creations (kept for clean startups)
     db.run(`CREATE TABLE IF NOT EXISTS users (telegram_id BIGINT PRIMARY KEY, first_name TEXT, username TEXT, family_id BIGINT)`);
     db.run(`CREATE TABLE IF NOT EXISTS categories (id SERIAL PRIMARY KEY, name TEXT, type TEXT, icon TEXT, is_mandatory BOOLEAN DEFAULT false, planned_amount NUMERIC DEFAULT 0, family_id BIGINT)`);
-    db.run(`CREATE TABLE IF NOT EXISTS transactions (id SERIAL PRIMARY KEY, amount NUMERIC, category_id INTEGER, user_id BIGINT, date TIMESTAMP DEFAULT CURRENT_TIMESTAMP, description TEXT, family_id BIGINT)`);
+    db.run(`CREATE TABLE IF NOT EXISTS transactions (id SERIAL PRIMARY KEY, amount NUMERIC, category_id INTEGER, user_id BIGINT, date TIMESTAMP DEFAULT CURRENT_TIMESTAMP, description TEXT, family_id BIGINT, wallet_id INTEGER)`);
     db.run(`CREATE TABLE IF NOT EXISTS wallets (id SERIAL PRIMARY KEY, name TEXT, icon TEXT, amount NUMERIC DEFAULT 0, family_id BIGINT)`);
     db.run(`CREATE TABLE IF NOT EXISTS savings (id SERIAL PRIMARY KEY, user_id BIGINT, name TEXT, currency TEXT, amount NUMERIC, family_id BIGINT)`);
     db.run(`CREATE TABLE IF NOT EXISTS investments (id SERIAL PRIMARY KEY, name TEXT, icon TEXT, amount NUMERIC, family_id BIGINT)`);
     db.run(`CREATE TABLE IF NOT EXISTS debts (id SERIAL PRIMARY KEY, name TEXT, amount NUMERIC, family_id BIGINT)`);
-    db.run(`CREATE TABLE IF NOT EXISTS recurring_payments (id SERIAL PRIMARY KEY, name TEXT, amount NUMERIC, category_id INTEGER, user_id BIGINT, day_of_month INTEGER, type TEXT, family_id BIGINT)`);
+    db.run(`CREATE TABLE IF NOT EXISTS recurring_payments (id SERIAL PRIMARY KEY, name TEXT, amount NUMERIC, category_id INTEGER, user_id BIGINT, day_of_month INTEGER, type TEXT, family_id BIGINT, wallet_id INTEGER, last_processed_date TEXT)`);
     db.run(`CREATE TABLE IF NOT EXISTS budgets (id SERIAL PRIMARY KEY, name TEXT, icon TEXT, type TEXT, planned_amount NUMERIC DEFAULT 0, family_id BIGINT)`);
     db.run(`CREATE TABLE IF NOT EXISTS goals (id SERIAL PRIMARY KEY, name TEXT, icon TEXT, type TEXT, amount_saved NUMERIC DEFAULT 0, target_amount NUMERIC DEFAULT 0, family_id BIGINT)`);
     db.run(`CREATE TABLE IF NOT EXISTS allocation_rules (id SERIAL PRIMARY KEY, target_goal_id INTEGER, percentage NUMERIC DEFAULT 0)`);
+    db.run(`CREATE TABLE IF NOT EXISTS transfers (id SERIAL PRIMARY KEY, amount NUMERIC, from_wallet_id INTEGER, to_wallet_id INTEGER, date TIMESTAMP DEFAULT CURRENT_TIMESTAMP, family_id BIGINT)`);
 
     // 2. Perform Migrations for existing tables
-    const tablesToMigrate = ['users', 'categories', 'transactions', 'wallets', 'savings', 'investments', 'debts', 'recurring_payments', 'budgets', 'goals'];
+    const tablesToMigrate = ['users', 'categories', 'transactions', 'wallets', 'savings', 'investments', 'debts', 'recurring_payments', 'budgets', 'goals', 'transfers'];
     tablesToMigrate.forEach(table => {
         db.run(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS family_id BIGINT`);
     });
+    // Migrate transaction/recurring tables to attach wallet and processing dates
+    db.run(`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS wallet_id INTEGER`);
+    db.run(`ALTER TABLE recurring_payments ADD COLUMN IF NOT EXISTS wallet_id INTEGER`);
+    db.run(`ALTER TABLE recurring_payments ADD COLUMN IF NOT EXISTS last_processed_date TEXT`);
 
     // 3. Drop existing unique constraints that conflict with multi-tenancy
     if (usePostgres && db._pool) {

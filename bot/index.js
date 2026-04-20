@@ -54,11 +54,35 @@ const createTransactionWizard = (sceneId, typeName) => {
                 const action = ctx.callbackQuery.data;
                 if (action.startsWith('cat_')) {
                     ctx.wizard.state.catId = action.split('_')[1];
-                    ctx.reply('Введите сумму и валюту (например: 500, 10 USD, 15 EUR):');
+                    
+                    // Fetch wallets to ask which one
+                    db.all(`SELECT * FROM wallets WHERE family_id = ?`, [ctx.wizard.state.familyId], (err, wallets) => {
+                        if (err || !wallets || wallets.length === 0) {
+                            ctx.reply('У вас нет кошельков. Сначала создайте их через Дашборд!');
+                            return ctx.scene.leave();
+                        }
+                        const buttons = wallets.map(w => Markup.button.callback(`${w.icon} ${w.name}`, `wal_${w.id}`));
+                        const keyboard = [];
+                        for(let i=0; i<buttons.length; i+=2) keyboard.push(buttons.slice(i, i+2));
+                        ctx.reply(`Откуда ${typeName === 'expense' ? 'списано' : 'зачислено'}? Выберите кошелек:`, Markup.inlineKeyboard(keyboard));
+                    });
                     return ctx.wizard.next();
                 }
             } else {
                 ctx.reply('Пожалуйста, выберите категорию из кнопок выше.');
+            }
+        },
+        async (ctx) => {
+            if (ctx.callbackQuery) {
+                await ctx.answerCbQuery().catch(() => {});
+                const action = ctx.callbackQuery.data;
+                if (action.startsWith('wal_')) {
+                    ctx.wizard.state.walletId = action.split('_')[1];
+                    ctx.reply('Введите сумму и валюту (например: 500, 10 USD, 15 EUR):');
+                    return ctx.wizard.next();
+                }
+            } else {
+                ctx.reply('Пожалуйста, выберите кошелек из кнопок выше.');
             }
         },
         async (ctx) => {
@@ -83,11 +107,18 @@ const createTransactionWizard = (sceneId, typeName) => {
             if (currency === 'EUR') finalRub = amount * rates.EUR;
 
             const catId = ctx.wizard.state.catId;
+            const walletId = ctx.wizard.state.walletId;
             const userId = ctx.from.id;
             const familyId = ctx.wizard.state.familyId;
             
-            db.run('INSERT INTO transactions (amount, category_id, user_id, family_id) VALUES (?, ?, ?, ?)', [finalRub, catId, userId, familyId], function(err) {
+            db.run('INSERT INTO transactions (amount, category_id, user_id, family_id, wallet_id) VALUES (?, ?, ?, ?, ?)', 
+                [finalRub, catId, userId, familyId, walletId], function(err) {
                 if (err) return console.error(err);
+                
+                // Update wallet balance directly
+                const modifier = typeName === 'expense' ? '-' : '+';
+                db.run(`UPDATE wallets SET amount = amount ${modifier} ? WHERE id = ? AND family_id = ?`, [finalRub, walletId, familyId]);
+                
                 ctx.reply(`✅ Сохранено! Итого: ${finalRub.toLocaleString('ru-RU', {maximumFractionDigits:0})} ₽`);
                 ctx.scene.leave();
             });
@@ -212,11 +243,41 @@ const startBot = async () => {
     try {
         await bot.launch();
         console.log('[INFO] Telegram Bot is successfully running...');
+        processRecurringPayments(); // process missed crons on boot
     } catch (err) {
         console.error('[ERROR] Failed to start Telegram Bot. Retrying in 10s...', err.message);
         setTimeout(startBot, 10000);
     }
 };
+
+const cron = require('node-cron');
+const processRecurringPayments = () => {
+    const today = new Date();
+    const currentDay = today.getDate();
+    const todayStr = today.toISOString().split('T')[0]; // YYYY-MM-DD
+    
+    db.all('SELECT * FROM recurring_payments', [], (err, rows) => {
+        if (err || !rows) return;
+        rows.forEach(p => {
+            if (p.day_of_month === currentDay && p.last_processed_date !== todayStr) {
+                // Execute payment
+                const modifier = p.type === 'expense' ? '-' : '+';
+                db.run('INSERT INTO transactions (amount, category_id, user_id, date, description, family_id, wallet_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                    [p.amount, p.category_id, p.user_id, new Date().toISOString(), `[АВТО] ${p.name}`, p.family_id, p.wallet_id], (err) => {
+                    if (!err) {
+                        if (p.wallet_id) {
+                            db.run(`UPDATE wallets SET amount = amount ${modifier} ? WHERE id = ? AND family_id = ?`, [p.amount, p.wallet_id, p.family_id]);
+                        }
+                        db.run('UPDATE recurring_payments SET last_processed_date = ? WHERE id = ?', [todayStr, p.id]);
+                        bot.telegram.sendMessage(p.user_id, `🔄 <b>Авто-платеж сработал:</b> ${p.name}\nСумма: ${p.amount.toLocaleString('ru-RU')} ₽\nТип: ${p.type === 'expense' ? 'Списание' : 'Пополнение'}`, {parse_mode: 'HTML'}).catch(()=>{});
+                    }
+                });
+            }
+        });
+    });
+};
+// Schedule to run every day at Midnight
+cron.schedule('0 0 * * *', processRecurringPayments);
 
 startBot();
 

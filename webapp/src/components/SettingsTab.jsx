@@ -4,10 +4,12 @@ import { Plus, Trash2 } from 'lucide-react';
 export default function SettingsTab() {
   const [categories, setCategories] = useState([]);
   const [recurring, setRecurring] = useState([]);
+  const [wallets, setWallets] = useState([]);
 
   const fetchData = () => {
     fetch('/api/categories').then(r=>r.json()).then(setCategories);
     fetch('/api/recurring').then(r=>r.json()).then(setRecurring);
+    fetch('/api/wallets').then(r=>r.json()).then(setWallets);
   };
 
   useEffect(() => { fetchData(); }, []);
@@ -62,11 +64,22 @@ export default function SettingsTab() {
       const day_of_month = prompt("День месяца? (1-31)");
       const type = prompt("Тип: income (доход) или expense (расход)?", "expense");
       
+      const catIdStr = prompt('ID Категории? (Введите число):\n' + categories.filter(c => c.type === type).map(c => `${c.id} - ${c.name}`).join('\n'));
+      const walIdStr = prompt('ID Кошелька? (Введите число):\n' + wallets.map(w => `${w.id} - ${w.name}`).join('\n'));
+
       if (name && amount && day_of_month && type) {
           fetch('/api/recurring', {
               method: 'POST',
               headers: {'Content-Type': 'application/json'},
-              body: JSON.stringify({name, amount: parseFloat(amount), day_of_month: parseInt(day_of_month), type})
+              body: JSON.stringify({
+                  name, 
+                  amount: parseFloat(amount), 
+                  day_of_month: parseInt(day_of_month), 
+                  type,
+                  category_id: parseInt(catIdStr)||null,
+                  wallet_id: parseInt(walIdStr)||null,
+                  user_id: 111111 // Default user for auto payments
+              })
           }).then(fetchData);
       }
   };
