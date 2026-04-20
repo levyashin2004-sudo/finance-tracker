@@ -21,19 +21,12 @@ const getRates = async () => {
     }
 };
 
-const cancelHandler = (ctx) => {
-    if (ctx.message && ctx.message.text && /(Дашборд|Добавить расход|Добавить доход|Пригласить в семью)/i.test(ctx.message.text)) {
-        ctx.scene.leave();
-        return true; 
-    }
-    return false;
-};
+
 
 const createTransactionWizard = (sceneId, typeName) => {
     return new Scenes.WizardScene(
         sceneId,
         async (ctx) => {
-            if (cancelHandler(ctx)) return;
             // Fetch categories dynamically
             db.get('SELECT family_id FROM users WHERE telegram_id = ?', [ctx.from.id], (err, row) => {
                 const familyId = row ? row.family_id : ctx.from.id;
@@ -57,20 +50,17 @@ const createTransactionWizard = (sceneId, typeName) => {
         },
         async (ctx) => {
             if (ctx.callbackQuery) {
-                const action = ctx.callbackQuery.data;
                 if (action.startsWith('cat_')) {
                     ctx.wizard.state.catId = action.split('_')[1];
                     ctx.reply('Введите сумму и валюту (например: 500, 10 USD, 15 EUR):');
                     ctx.answerCbQuery();
                     return ctx.wizard.next();
                 }
-            } else if (cancelHandler(ctx)) return;
-            else {
+            } else {
                 ctx.reply('Пожалуйста, выберите категорию из кнопок выше.');
             }
         },
         async (ctx) => {
-            if (cancelHandler(ctx)) return;
             const text = (ctx.message.text || '').trim().toUpperCase();
             // Parse amount and currency
             const match = text.match(/^([\d.,]+)\s*(USD|EUR|RUB)?$/);
@@ -108,6 +98,15 @@ const expenseWizard = createTransactionWizard('EXPENSE_WIZARD', 'expense');
 const incomeWizard = createTransactionWizard('INCOME_WIZARD', 'income');
 
 const stage = new Scenes.Stage([expenseWizard, incomeWizard]);
+
+// GLOBAL INTERCEPTOR: If a user clicks ANY main keyboard button, immediately abort active scenes and restart flow
+bot.hears(/(Дашборд|Добавить расход|Добавить доход|Пригласить в семью)/i, async (ctx, next) => {
+    if (ctx.scene && ctx.scene.current) {
+        await ctx.scene.leave();
+    }
+    return next();
+});
+
 bot.use(stage.middleware());
 
 bot.start((ctx) => {
@@ -153,7 +152,7 @@ bot.hears(/Пригласить в семью/i, (ctx) => {
     db.get('SELECT family_id FROM users WHERE telegram_id = ?', [ctx.from.id], (err, row) => {
         const fId = row ? row.family_id : ctx.from.id;
         const link = `https://t.me/${ctx.botInfo.username}?start=join_${fId}`;
-        ctx.reply(`Отправьте эту ссылку членам семьи, чтобы у вас был **ОБЩИЙ** бюджет:\n\n${link}\n\n*Друзья, зашедшие просто по названию бота (без ссылки), получат отдельный пустой бюджет.*`, {parse_mode: 'Markdown'});
+        ctx.reply(`Отправьте эту ссылку членам семьи, чтобы у вас был <b>ОБЩИЙ</b> бюджет:\n\n${link}\n\n<i>Друзья, зашедшие просто по названию бота (без ссылки), получат отдельный пустой бюджет.</i>`, {parse_mode: 'HTML'});
     });
 });
 
