@@ -143,14 +143,29 @@ const incomeWizard = createTransactionWizard('INCOME_WIZARD', 'income');
 
 const stage = new Scenes.Stage([expenseWizard, incomeWizard]);
 
-// GLOBAL INTERCEPTOR: Forcibly destroy active scenes if a user clicks a Global Menu Button or sends /start
+// GLOBAL INTERCEPTOR & AUTO-REGISTER
 bot.use((ctx, next) => {
     const text = (ctx.message && ctx.message.text) ? ctx.message.text : '';
+    
+    // 1. Forcibly destroy active scenes if a user clicks a Global Menu Button or sends /start
     if (text.match(/^\/start/i) || text.match(/(Дашборд|Добавить расход|Добавить доход|Пригласить в семью)/i)) {
         if (ctx.session && ctx.session.__scenes) {
             ctx.session.__scenes = {}; // Forcefully wipe scene state
         }
     }
+    
+    // 2. Silent Auto-Registration (If user bypassed /start)
+    if (ctx.from && ctx.from.id && !text.match(/^\/start/i)) {
+        db.get('SELECT telegram_id FROM users WHERE telegram_id = ?', [ctx.from.id], (err, row) => {
+            if (!row) {
+                db.run('INSERT INTO users (telegram_id, first_name, username, family_id) VALUES (?, ?, ?, ?)', 
+                       [ctx.from.id, ctx.from.first_name, ctx.from.username, ctx.from.id], () => {
+                    db.seedFamily(ctx.from.id);
+                });
+            }
+        });
+    }
+
     return next();
 });
 

@@ -14,8 +14,21 @@ app.use((req, res, next) => {
         if (!tgId) return res.status(401).json({error: 'No Telegram ID header provided'});
         
         db.get('SELECT family_id FROM users WHERE telegram_id = ?', [tgId], (err, row) => {
-            req.familyId = row ? row.family_id : parseInt(tgId);
-            next();
+            if (row) {
+                req.familyId = row.family_id;
+                next();
+            } else {
+                // Auto-register dynamically
+                req.familyId = parseInt(tgId);
+                const safeTgId = parseInt(tgId);
+                if (!isNaN(safeTgId) && safeTgId > 0) {
+                    db.run('INSERT INTO users (telegram_id, first_name, username, family_id) VALUES (?, ?, ?, ?)', 
+                           [safeTgId, 'AppUser', '', safeTgId], () => {
+                        db.seedFamily(safeTgId);
+                    });
+                }
+                next();
+            }
         });
     } else {
         next();
