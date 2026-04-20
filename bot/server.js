@@ -173,7 +173,12 @@ app.post('/api/group/join', (req, res) => {
     db.get('SELECT id, name FROM families WHERE UPPER(invite_code) = ?', [code], (err, group) => {
         if (!group) return res.status(404).json({ error: 'Группа не найдена. Проверьте код.' });
         db.run('UPDATE users SET family_id = ? WHERE telegram_id = ?', [group.id, req.telegramId], () => {
-            res.json({ success: true, family_id: group.id, group_name: group.name });
+            db.get('SELECT first_name FROM users WHERE telegram_id = ?', [req.telegramId], (err, user) => {
+                if (global.notifyFamily) {
+                    global.notifyFamily(group.id, user ? user.first_name : 'Новый участник', req.telegramId);
+                }
+                res.json({ success: true, family_id: group.id, group_name: group.name });
+            });
         });
     });
 });

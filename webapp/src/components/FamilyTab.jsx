@@ -11,8 +11,24 @@ export default function FamilyTab() {
   const [newGroupName, setNewGroupName] = useState('');
   const [joinCode, setJoinCode] = useState('');
   const [copied, setCopied] = useState(false);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [tempName, setTempName] = useState('');
 
   const myTgId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id || localStorage.getItem('saved_desktop_user') || '';
+
+  const handleRenameGroup = () => {
+      if (!tempName.trim()) return;
+      fetch('/api/group', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: tempName })
+      }).then(r => r.json()).then(data => {
+          if (data.success) {
+              setIsEditingName(false);
+              fetchGroup();
+          }
+      });
+  };
 
   const fetchGroup = () => {
     fetch('/api/group').then(r => r.json()).then(setGroup);
@@ -115,7 +131,35 @@ export default function FamilyTab() {
       {/* Current Group Card */}
       <div className="glass-card hero-card" style={{ marginBottom: '16px' }}>
         <div style={{ fontSize: '2rem', marginBottom: '6px' }}>👨‍👩‍👧‍👦</div>
-        <div style={{ fontSize: '1.4rem', fontWeight: 700 }}>{group?.name || 'Моя группа'}</div>
+        
+        {isEditingName ? (
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', marginBottom: '10px' }}>
+                <input 
+                    type="text" 
+                    value={tempName} 
+                    onChange={e => setTempName(e.target.value)}
+                    className="search-input"
+                    style={{ width: '200px', textAlign: 'center' }}
+                    autoFocus
+                    onKeyDown={e => {
+                        if (e.key === 'Enter') handleRenameGroup();
+                        if (e.key === 'Escape') setIsEditingName(false);
+                    }}
+                />
+                <button className="add-btn-small" onClick={handleRenameGroup} style={{ background: '#10b981' }}>✅</button>
+                <button className="add-btn-small" onClick={() => setIsEditingName(false)} style={{ background: '#ef4444' }}>❌</button>
+            </div>
+        ) : (
+            <div style={{ fontSize: '1.4rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                {group?.name || 'Моя группа'}
+                {isCreator && (
+                    <button className="edit-icon-btn" onClick={() => { setTempName(group?.name || 'Моя группа'); setIsEditingName(true); }} title="Изменить название">
+                        ✏️
+                    </button>
+                )}
+            </div>
+        )}
+
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginTop: '8px' }}>
           <div className="invite-code-display">
             <Hash size={14} />

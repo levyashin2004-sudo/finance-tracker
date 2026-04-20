@@ -184,6 +184,7 @@ const notifyFamily = (familyId, newMemberName, excludeId) => {
         }
     });
 };
+global.notifyFamily = notifyFamily;
 
 bot.start((ctx) => {
     const text = (ctx.message && ctx.message.text) || '';
