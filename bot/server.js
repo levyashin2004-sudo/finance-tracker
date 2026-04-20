@@ -35,10 +35,21 @@ app.use((req, res, next) => {
 });
 
 const path = require('path');
-app.use(express.static(path.join(__dirname, '../webapp/dist')));
 
-// Fallback for SPA routing
+// Hashed assets (JS/CSS) can cache forever, but HTML must never cache
+app.use(express.static(path.join(__dirname, '../webapp/dist'), {
+    setHeaders: (res, filePath) => {
+        if (filePath.endsWith('.html')) {
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+            res.setHeader('Pragma', 'no-cache');
+            res.setHeader('Expires', '0');
+        }
+    }
+}));
+
+// Fallback for SPA routing — also no-cache
 app.get('/', (req, res) => {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.sendFile(path.join(__dirname, '../webapp/dist/index.html'));
 });
 
