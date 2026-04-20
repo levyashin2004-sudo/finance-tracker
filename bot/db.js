@@ -1,5 +1,4 @@
 const { Pool, types } = require('pg');
-const sqlite3 = require('sqlite3').verbose();
 const dns = require('dns');
 const path = require('path');
 require('dotenv').config();
@@ -93,6 +92,7 @@ if (usePostgres) {
     console.log("[STORAGE] Cloud is unreachable or disabled. Switching to Bulletproof SQLite native mode.");
     
     // Polyfill db overrides to match the exact same API but using pure SQLite backend
+    const sqlite3 = require('sqlite3').verbose();
     const _sqlite = new sqlite3.Database(path.join(__dirname, 'finance.db'));
     
     db = {
